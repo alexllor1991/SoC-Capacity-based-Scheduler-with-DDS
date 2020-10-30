@@ -4,6 +4,7 @@ This project aims to implement a dynamic scheduler to extend the lifecycle of a 
 1. Install kind to simulate a kubernetes cluster and kubectl to manage it.
 
 --Kubectl installation--
+
 sudo apt-get update && sudo apt-get install -y apt-transport-https gnupg2 curl
 
 curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
@@ -22,6 +23,7 @@ tar -C /usr/local -xzf go1.15.3.linux-amd64.tar.gz
 export PATH=$PATH:/usr/local/go/bin
 
 go version #to verify go installation
+
 go get sigs.k8s.io/kind@v0.9.0
 
 -----or-----
@@ -33,9 +35,11 @@ chmod +x ./kind
 mv ./kind /some-dir-in-your-PATH/kind
 
 2. Go to cluster folder and run the setup script to create the cluster
+
 sudo ./setup.sh
 
 3. Go back to My_scheduler folder and run the deploy script
+
 sudo ./deploy.sh 'scheduler'
 
 4. Verify in the dashboard that a deployment and pod named my_scheduler have been created.
