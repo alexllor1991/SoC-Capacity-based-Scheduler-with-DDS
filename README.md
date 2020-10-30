@@ -15,7 +15,10 @@ sudo apt-get update
 
 sudo apt-get install -y kubectl
 
---Kind installation-- Information about Kind here: https://kind.sigs.k8s.io/docs/user/quick-start/
+--Kind installation-- 
+
+Information about Kind here: https://kind.sigs.k8s.io/docs/user/quick-start/
+
 wget https://golang.org/dl/go1.15.3.linux-amd64.tar.gz
 
 tar -C /usr/local -xzf go1.15.3.linux-amd64.tar.gz
