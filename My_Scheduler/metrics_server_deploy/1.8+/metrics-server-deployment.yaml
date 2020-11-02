@@ -36,6 +36,7 @@ spec:
           - --metric-resolution=1s
           - --kubelet-preferred-address-types=InternalIP
           - --kubelet-insecure-tls
+          - --v=2
         volumeMounts:
         - name: tmp-dir
           mountPath: /tmp
