@@ -43,6 +43,6 @@ sudo ./setup.sh
 
 3. Go back to My_scheduler folder and run the deploy script
 
-sudo ./deploy.sh 'scheduler'
+sudo ./deploy.sh 'my-scheduler'
 
 4. Verify in the dashboard that a deployment and pod named my_scheduler have been created.
