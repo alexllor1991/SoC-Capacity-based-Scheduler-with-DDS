@@ -103,3 +103,6 @@ echo "To see the dashboard execute the command kubectl proxy and use the followi
 echo "To authenticate in the gui use the following Admin token: "
 echo $admin_token | base64 --decode
 echo ""
+
+kind export kubeconfig
+kubectl cluster-info
