@@ -1,14 +1,14 @@
 import json
 from enum import Enum
-
 from kubernetes import client
 import settings
 
 
-class SchedulingPriority(Enum):
+class SchedulingCriteria(Enum):
     MIXED = 0
     MEMORY = 1
-    CPU = 2
+    CPU = 2   # select the least loaded node
+    FASTPROCESSING = 3  # select the node that offer the best processing times (processing capacity)
 
 
 class DataType(Enum):
@@ -52,11 +52,12 @@ class Pod(object):
         self.metadata = metadata_
         self.spec = spec_
         self.status = status_
+        self.demanded_processing = None
         self.usage = []
         self.is_alive = True
 
         # label set priority for this pod
-        self.scheduling_priority = SchedulingPriority.MEMORY
+        self.scheduling_criteria = self.set_scheduling_criteria()
 
     def __eq__(self, other):
         return self.metadata.name == other.metadata.name
@@ -205,3 +206,17 @@ class Pod(object):
             return {'cpu': avg_cpu, 'memory': avg_mem}
         else:
             return {'cpu': 0, 'memory': 0}
+
+    def set_scheduling_criteria (self):
+
+        if settings.SCHEDULING_CRITERIA == SchedulingCriteria.MIXED:
+            return SchedulingCriteria.MIXED
+        elif settings.SCHEDULING_CRITERIA == SchedulingCriteria.MEMORY:
+            return SchedulingCriteria.MEMORY
+        elif settings.SCHEDULING_CRITERIA == SchedulingCriteria.CPU:
+            return SchedulingCriteria.CPU
+        elif settings.SCHEDULING_CRITERIA == SchedulingCriteria.FASTPROCESSING:
+            return SchedulingCriteria.FASTPROCESSING
+        else:
+            print('None scheduling criteria have been set')
+            return 404

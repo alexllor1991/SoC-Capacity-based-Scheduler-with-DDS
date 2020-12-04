@@ -54,7 +54,8 @@ class ClusterMonitor:
         :return:
         """
         self.status_lock.acquire(blocking=True)
-        self.all_nodes = NodeList()
+        if not len(self.all_nodes) > 0:
+            self.all_nodes = NodeList()
         
         def names(self, names):
             self._names = names
@@ -62,10 +63,15 @@ class ClusterMonitor:
         
         print('Updating nodes')
         try:    
-            for node_ in self.v1.list_node().items:
-                node = Node(node_.metadata, node_.spec, node_.status)
-                node.update_node(self.all_pods)
-                self.all_nodes.items.append(node)
+            if len(self.v1.list_node().items) != len(self.all_nodes.items):
+                for node_ in self.v1.list_node().items:
+                    node = Node(node_.metadata, node_.spec, node_.status)
+                    node.update_node(self.all_pods)
+                    self.all_nodes.items.append(node)
+            for node_ in self.all_nodes.items:
+                node_.update_node(self.all_pods)
+                index = self.all_nodes.getIndexNode(lambda x: x.metadata.name == node_.metadata.name)
+                self.all_nodes.items[index] = node_
             self.status_lock.release()
         except ApiException as e:
             print("Error: in list_node", e)

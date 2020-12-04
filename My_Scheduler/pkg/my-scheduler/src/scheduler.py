@@ -1,24 +1,38 @@
 import os
 from time import sleep
-from datetime import datetime
+from datetime import datetime as dt
 from threading import Thread
 import logging
 import settings
+import itertools
 from monitor import ClusterMonitor
 from node import NodeList
-from pod import Pod, SchedulingPriority
+from pod import Pod, SchedulingCriteria
+from service import Priority, ServicePriorityList, ServiceList, Service, VNFunction, Task
 
 from kubernetes import client, config, watch
 
 logging.basicConfig(filename=settings.LOG_FILE, level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S',
                     format='%(asctime)s:%(levelname)s:%(message)s')
 
+class PriorityListCriteria(Enum):
+    SERVICEDEADLINE = 0
+    SERVICEPRIORITY = 1
+    DYNAMIC = 2
+
 class Scheduler:
     def __init__(self):
         self.monitor = ClusterMonitor()
-        self.watcher = watch.Watch()
+        self.watcherpod = watch.Watch()
+        self.watcherdep = watch.Watch()
         configuration = client.Configuration()
         self.v1 = client.CoreV1Api(client.ApiClient(configuration))
+        self.v1ext = client.ExtensionsV1beta1Api(client.ApiClient(configuration))
+
+        self.all_services = ServiceList()
+        self.priority_list = ServicePriorityList()
+
+        self.vnf = VNFunction()
 
         self.scheduler_name = 'my-scheduler'
 
@@ -37,39 +51,60 @@ class Scheduler:
 
         while True:
             try:
-                for event in self.watcher.stream(self.v1.list_pod_for_all_namespaces):
-                    print('Event type ', event['type'])
-                    if event['type'] == 'ADDED' and event['object'].spec.scheduler_name == self.scheduler_name:
-                        new_pod = Pod(event['object'].metadata, event['object'].spec, event['object'].status)
+                for (eventpod, eventdep) in zip(self.watcherpod.stream(self.v1.list_pod_for_all_namespaces), self.watcherdep.stream(v1ext.list_deployment_for_all_namespaces)):
+                    #print('Event type ', event['type'])
+
+                    if eventdep['type'] == 'ADDED' and (eventdep['object'].kind == 'Deployment' or eventdep['object'].kind == 'ReplicaSet') and eventdep['object'].spec.template.spec.scheduler_name == self.scheduler_name:
+                        print('Event object ', eventdep['object'].kind)
+
+                        if not self.all_services.isServiceList(eventdep['object'].metadata.annotations.service_id): 
+                            new_service = Service(eventdep['object'].metadata.annotations.service_id, eventdep['object'].metadata.annotations.service_name, eventdep['object'].metadata.annotations.service_deadline, eventdep['object'].metadata.annotations.service_priority, eventdep['object'].metadata.annotations.service_runningtime)
+                            print ('New service ADDED', new_service.name)
+                            new_service.arrival_time = dt.now().isoformat()
+                            self.all_services.items.append(new_service)
+                        serv = self.all_services.getService(lambda x: x.id_ == eventdep['object'].metadata.annotations.service_id)
+
+                        new_vnf = VNFunction(eventdep['object'].metadata.annotations.id_vnf, eventdep['object'].metadata.name, eventdep['object'].metadata.annotations.required_service_rate, eventdep['object'].metadata.annotations.service_id)
+                        self.vnf = new_vnf
+                        if not serv.isVNFList_ID(new_vnf.id_):
+                            serv.vnfunctions.items.append(new_vnf)
+                        index = self.all_services.getIndexService(lambda x: x.id_ == serv.id_)
+                        self.all_services.items[index] = serv
+
+                    if eventpod['type'] == 'ADDED' and eventpod['object'].spec.scheduler_name == self.scheduler_name:
+                        new_pod = Pod(eventpod['object'].metadata, eventpod['object'].spec, eventpod['object'].status)
+                        new_pod.demanded_processing = self.vnf.r_rate
                         print('New pod ADDED', new_pod.metadata.name)
 
-                        self.monitor.update_nodes()
+                        vnf = self.all_services.items
 
-                        for node in self.monitor.all_nodes.items:
-                            logging.info(node.metadata.name + ' ' + str(node.usage['memory']))
+                        for i in self.priority_list.items:
 
-                        self.monitor.print_nodes_stats()
+                            self.monitor.update_nodes()
 
-                        new_node = self.choose_node(new_pod)
+                            for node in self.monitor.all_nodes.items:
+                                logging.info(node.metadata.name + ' ' + str(node.usage['memory']) + ' ' + str(node.usage['cpu']))
 
-                        if new_node is not None:
-                            self.bind_to_node(new_pod.metadata.name, new_node.metadata.name)
+                            self.monitor.print_nodes_stats()
 
-                            """
-                            without this cluster for 2nd and next Pods in deployment looks the same,
-                            so all Pods from deployment are placed on the same Node, we want to avoid this
-                            block scheduling thread until newly created Pod is ready
-                            """
-                            self.monitor.wait_for_pod(new_pod)
-                            self.monitor.update_pods()
-                        else:
-                            print('Pod cannot be scheduled..')
-                            """
-                            when Pod cannot be scheduled it is being deleted and after
-                            couple seconds new Pod is being created and another attempt
-                            of scheduling this Pod is being made
-                            """
+                            new_node = self.choose_node(i)
 
+                            if new_node is not None:
+                                self.bind_to_node(i.metadata.name, new_node.metadata.name)
+                                """
+                                without this cluster for 2nd and next Pods in deployment looks the same,
+                                so all Pods from deployment are placed on the same Node, we want to avoid this
+                                block scheduling thread until newly created Pod is ready
+                                """
+                                self.monitor.wait_for_pod(i)
+                                self.monitor.update_pods()
+                            else:
+                                print('Pod cannot be scheduled..')
+                                """
+                                when Pod cannot be scheduled it is being deleted and after
+                                couple seconds new Pod is being created and another attempt
+                                of scheduling this Pod is being made
+                                """
             except Exception as e:
                 print(str(e))
 
@@ -120,6 +155,7 @@ class Scheduler:
         :return node.NodeList: List of Node which
             satisfy Pod requirements
         """
+        # TODO add SLA requirements of app related to CPU and Memory.
         return_node_list = NodeList()
 
         if pod.spec.node_name is not None:
@@ -127,8 +163,16 @@ class Scheduler:
                 if pod.spec.node_name == node.metadata.name and node.spec.unschedulable is not True:
                     return_node_list.items.append(node)
         else:
-            print('All nodes can be used for Pod %s ' % pod.metadata.name)
+            #print('All nodes can be used for Pod %s ' % pod.metadata.name)
             for node in self.monitor.all_nodes.items:
+                if pod.scheduling_criteria == SchedulingCriteria.MIXED and pod.spec.containers.requests['memory'] < (settings.TOTAL_MEMORY - node.usage['memory']) and pod.spec.containers.requests['cpu'] < (settings.TOTAL_CPU - node.usage['cpu']) and node.spec.unschedulable is not True:
+                     return_node_list.items.append(node)
+                elif pod.scheduling_criteria == SchedulingCriteria.MEMORY and pod.spec.containers.requests['memory'] < (settings.TOTAL_MEMORY - node.usage['memory']) and node.spec.unschedulable is not True:
+                    return_node_list.items.append(node)
+                elif pod.scheduling_criteria == SchedulingCriteria.CPU and pod.spec.containers.requests['cpu'] < (settings.TOTAL_CPU - node.usage['cpu']) and node.spec.unschedulable is not True:
+                    return_node_list.items.append(node)
+                elif pod.scheduling_criteria == SchedulingCriteria.FASTPROCESSING and pod.demanded_processing < node.proc_capacity and node.spec.unschedulable is not True:
+                    return_node_list.items.append(node)
                 if node.spec.unschedulable is not True:
                     # TODO check labels there and decide if Node can be used for pod
                     return_node_list.items.append(node)
@@ -162,15 +206,19 @@ class Scheduler:
             for node in node_list.items:
                 print(node.metadata.name, node.usage)
 
-                if pod.scheduling_priority == SchedulingPriority.MEMORY:
+                if pod.scheduling_criteria == SchedulingCriteria.MEMORY:
                     if node.usage['memory'] < best_node.usage['memory']:
                         best_node = node
 
-                elif pod.scheduling_priority == SchedulingPriority.CPU:
+                elif pod.scheduling_criteria == SchedulingCriteria.CPU:
                     if node.usage['cpu'] < best_node.usage['cpu']:
                         best_node = node
 
-                elif pod.scheduling_priority == SchedulingPriority.CPU:
+                elif pod.scheduling_criteria == SchedulingCriteria.FASTPROCESSING:
+                    if node.proc_capacity < best_node.proc_capacity:
+                        best_node = node
+
+                elif pod.scheduling_criteria == SchedulingCriteria.CPU:
                     pass
                     # current_best =
 
@@ -178,7 +226,7 @@ class Scheduler:
             print(node.metadata.name, node.usage)
 
         print('Selected node:')
-        print(best_node.metadata.name, best_node.usage)
+        print(best_node.metadata.name, best_node.usage, best_node.proc_capacity)
         return best_node
 
     def calculate_score(self, pod):
