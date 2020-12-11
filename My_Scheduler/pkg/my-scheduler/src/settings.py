@@ -1,8 +1,10 @@
 LIMIT_OF_RECORDS = 1000
 
-TOTAL_CPU = 4000
+NUMBER_OF_CORE = 12 #20
 
-TOTAL_MEMORY = 10000
+TOTAL_CPU = NUMBER_OF_CORE * 1000 # value expressed in milli units of CPU
+
+TOTAL_MEMORY = 26153684 #52407392 value expressed in Ki
 
 MIX_METRICS = False
 
@@ -15,11 +17,15 @@ MIN_PROCESS_CAPACITY = 500  #value in MIPS (Million of Instruction per Second) t
 
 MAX_PROCESS_CAPACITY = 3000  #value in MIPS (Million of Instruction per Second) taken from paper Q-learning based dynamic task scheduling for energy-efficient cloud computing
 
-PRIORITY_LIST_CRITERIA = 0  # if 0 the priority list is sorted by taking into account the service deadline. 
+PRIORITY_LIST_CRITERIA = 1  # if 0 the priority list is sorted by taking into account the service deadline. 
                             # if 1 the priority list is sorted by taking into account the service priority.
-                            # if 2 the priority list is sorted dynamically by taking into account the equation 
+                            # if 2 the priority list is sorted dynamically by taking into account an equation 
 
-SCHEDULING_CRITERIA = 0  # if 0 the scheduling criteria is a mixed relation between CPU and MEMORY usage
+SCHEDULING_CRITERIA = 3  # if 0 the scheduling criteria is a mixed relation between CPU and MEMORY usage
                          # if 1 the scheduling criteria takes into account the MEMORY usage
                          # if 2 the scheduling criteria takes into account the CPU usage
                          # if 3 the scheduling criteria takes into account the best processing times in the nodes
+
+delta_1 = 0.7
+
+delta_2 = 0.3

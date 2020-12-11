@@ -22,8 +22,6 @@ class NodeList(object):
         for i,x in enumerate(self.items):
             if filter(x):
                 return i
-            else:
-                print('Node not found')
 
 class Node(object):
     def __init__(self, metadata_, spec_, status_):
@@ -55,8 +53,8 @@ class Node(object):
         :return:
         """
         self.pods = self.get_pods_on_node(pod_list)
-        self.usage = self.get_node_usage()
         self.proc_capacity = self.process_capacity()
+        self.usage = self.get_node_usage()
 
     def get_node_usage(self):
         """
@@ -64,15 +62,15 @@ class Node(object):
         Pods running on this node
         :return:
         """
-        memory = 0
-        cpu = 0
+        memory = 0.0
+        cpu = 0.0
         for pod in self.pods.items:
             if pod.is_alive:
                 # there can be pods not collected by garbage collector yet
-                memory += int(pod.get_usage()['memory'])
-                cpu += int(pod.get_usage()['cpu'])
+                memory += float(pod.get_usage()['memory'])
+                cpu += float(pod.get_usage()['cpu'])
 
-        return {'cpu': cpu, 'memory': memory}
+        return {'cpu': cpu, 'memory': memory, 'proc_capacity': self.proc_capacity}
 
     def get_pods_on_node(self, pod_list):
         """

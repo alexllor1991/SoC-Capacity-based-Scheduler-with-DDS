@@ -3,18 +3,9 @@ from enum import Enum
 from kubernetes import client
 import settings
 
-
-class SchedulingCriteria(Enum):
-    MIXED = 0
-    MEMORY = 1
-    CPU = 2   # select the least loaded node
-    FASTPROCESSING = 3  # select the node that offer the best processing times (processing capacity)
-
-
 class DataType(Enum):
     MEMORY = 0
     CPU = 1
-
 
 memory_type_wage = \
     {
@@ -26,20 +17,26 @@ memory_type_wage = \
         'Ei': 1000000000000000, 'E': 1000000000000000,
     }
 
+cpu_type_wage = \
+    {
+        'm': 1, 'u': 1,
+        'n': 0.000001,
+    }
+
 BASE_MEMORY_WAGE = memory_type_wage['Ki']
 
+BASE_CPU_WAGE = cpu_type_wage['m']
 
 class PodList(object):
     def __init__(self):
         self.items = []
 
-
 class Pod(object):
     def __init__(self, metadata_, spec_, status_):
         """
         :param V1ObjectMeta metadata_:
-        :param V1NodeSpec spec_:
-        :param V1NodeStatus status_:
+        :param V1PodSpec spec_:
+        :param V1PodStatus status_:
         :return:
         """
         if type(metadata_) is not client.models.v1_object_meta.V1ObjectMeta:
@@ -53,14 +50,35 @@ class Pod(object):
         self.spec = spec_
         self.status = status_
         self.demanded_processing = None
+        self.id = None
+        self.service_id = None
+        self.deadline = None
+        self.running_time_task = None
+        self.service_arrival_time = None
+        self.rank = None
+        self.priority = None
         self.usage = []
         self.is_alive = True
 
         # label set priority for this pod
-        self.scheduling_criteria = self.set_scheduling_criteria()
+        self.scheduling_criteria = None
 
     def __eq__(self, other):
         return self.metadata.name == other.metadata.name
+
+    def to_dir(self):
+        print( \
+            {
+                'Id': self.id, 
+                'Name': self.metadata.name,
+                'Demanded_processing': self.demanded_processing,
+                'Running_time': self.running_time_task,
+                'Deadline': str(self.deadline),
+                'Service_arrival_time': str(self.service_arrival_time),
+                'Priority': self.priority,
+                'Scheduling_criteria': self.scheduling_criteria,
+                'Rank': self.rank,
+            })
 
     def fetch_usage(self):
         """
@@ -108,7 +126,6 @@ class Pod(object):
 
                 if found:
                     # there can be only one param specified in requests
-                    # TODO cpu units m and n
 
                     if 'cpu' in tmp_cont.resources.requests:
                         tmp_cpu += self.parse_usage_data(tmp_cont.resources.requests['cpu'], DataType.CPU)
@@ -143,7 +160,7 @@ class Pod(object):
         correct types Ei, Pi, Ti, Gi, Mi, Ki
         :param str data_string: string containing data to translate
         :param  DataType data_type: type of input data
-        :return int/None: return in value in Ki for memory and ??? for
+        :return int/None: return value in Ki for memory and m for
             CPU, None if passed data was incorrect
         """
         if type(data_type) is not DataType:
@@ -161,7 +178,6 @@ class Pod(object):
                 if data_string[-2:].isalpha():
                     wage = memory_type_wage[data_string[-2:]] / BASE_MEMORY_WAGE
                     value = int(data_string[:-2])
-
                 elif data_string[-1:].isalpha():
                     wage = memory_type_wage[data_string[-1:]] / BASE_MEMORY_WAGE
                     value = int(data_string[:-1])
@@ -180,13 +196,16 @@ class Pod(object):
 
         elif data_type == DataType.CPU:
 
-            if data_string[-1].isalpha(): # TODO check this letter
-
-                for char in data_string[:-1]:
-                    if char.isalpha():
-                        return None
-
-                return int(data_string[:-1])
+            if data_string[-1].isalpha():
+                wage = cpu_type_wage[data_string[-1]] / BASE_CPU_WAGE
+                value = int(data_string[:-1])
+                # for char in data_string[:-1]:
+                #     print(char)
+                #     if char.isalpha():
+                #         return None
+                # print(data_string[:-1])
+                #return int(data_string[:-1])
+                return float(wage * value)
             else:
                 return None
 
@@ -195,28 +214,14 @@ class Pod(object):
         Get usage calculated based on Pod statistics
         :return dict: dict('cpu': cpu_usage, 'memory': memory_usage)
         """
-        sum_cpu = 0
-        sum_mem = 0
+        sum_cpu = 0.0
+        sum_mem = 0.0
         if len(self.usage) > 0:
             for entry in self.usage:
-                sum_cpu += int(entry['cpu'])
-                sum_mem += int(entry['memory'])
+                sum_cpu += float(entry['cpu'])
+                sum_mem += float(entry['memory'])
             avg_cpu = sum_cpu / len(self.usage)
             avg_mem = sum_mem / len(self.usage)
             return {'cpu': avg_cpu, 'memory': avg_mem}
         else:
             return {'cpu': 0, 'memory': 0}
-
-    def set_scheduling_criteria (self):
-
-        if settings.SCHEDULING_CRITERIA == SchedulingCriteria.MIXED:
-            return SchedulingCriteria.MIXED
-        elif settings.SCHEDULING_CRITERIA == SchedulingCriteria.MEMORY:
-            return SchedulingCriteria.MEMORY
-        elif settings.SCHEDULING_CRITERIA == SchedulingCriteria.CPU:
-            return SchedulingCriteria.CPU
-        elif settings.SCHEDULING_CRITERIA == SchedulingCriteria.FASTPROCESSING:
-            return SchedulingCriteria.FASTPROCESSING
-        else:
-            print('None scheduling criteria have been set')
-            return 404

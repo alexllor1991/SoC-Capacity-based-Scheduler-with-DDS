@@ -36,7 +36,7 @@ class ClusterMonitor:
         self.v1 = client.CoreV1Api(client.ApiClient(configuration))
 
         self.all_pods = PodList()
-        self.all_nodes = NodeList()  # TODO change to nodeList
+        self.all_nodes = NodeList() 
         self.pods_not_to_garbage = []
 
     def print_nodes_stats(self):
@@ -54,7 +54,7 @@ class ClusterMonitor:
         :return:
         """
         self.status_lock.acquire(blocking=True)
-        if not len(self.all_nodes) > 0:
+        if not len(self.all_nodes.items) > 0:
             self.all_nodes = NodeList()
         
         def names(self, names):
