@@ -12,6 +12,7 @@ from kubernetes.client.models.v1_container_image import V1ContainerImage
 import settings
 from node import Node, NodeList
 from pod import Pod, PodList
+from service import ServiceList, TaskList, Service, VNFunction, Task
 
 NUMBER_OF_RETRIES = 7
 
@@ -34,9 +35,13 @@ class ClusterMonitor:
 
         configuration = client.Configuration()
         self.v1 = client.CoreV1Api(client.ApiClient(configuration))
+        self.batch_v1 = client.BatchV1Api(client.ApiClient(configuration))
+        self.apps_v1 = client.AppsV1Api(client.ApiClient(configuration))
 
         self.all_pods = PodList()
-        self.all_nodes = NodeList() 
+        self.all_nodes = NodeList()
+        self.all_services = ServiceList()
+        self.all_tasks = TaskList()
         self.pods_not_to_garbage = []
 
     def print_nodes_stats(self):
@@ -95,6 +100,7 @@ class ClusterMonitor:
         :return:
         """
         retries = 0
+        retries_not_ready = 0
 
         while True:
             found = False
@@ -121,6 +127,11 @@ class ClusterMonitor:
                     break
                 else:
                     print('Pod %s not ready...' % new_pod.metadata.name)
+
+                    retries_not_ready += 1
+
+                    if retries_not_ready == NUMBER_OF_RETRIES:
+                        break
 
             else:
                 print('Pod %s not found' % new_pod.metadata.name)
@@ -175,9 +186,43 @@ class ClusterMonitor:
                     print('Added pod ' + pod.metadata.name)
                     self.all_pods.items.append(pod)
 
+            if pod_.status.phase == 'Succeeded':
+                for pod in self.all_pods.items:
+                    if pod_.metadata.name == pod.metadata.name:
+                        this_pod = self.all_pods.getPod(lambda x: x.metadata.name == pod.metadata.name)
+                        if this_pod.event == "service":
+                            serv = self.all_services.getService(lambda x: x.id_ == this_pod.service_id)
+                            vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == this_pod.id)
+                            vnf.completion_time = datetime.now()
+                            vnf.makespan = abs((vnf.completion_time - vnf.starting_time).seconds)
+                            if vnf.id_ == serv.vnfunctions.items[-1].id_:
+                                serv.makespan = abs((vnf.completion_time - serv.arrival_time).seconds)
+                            vnf_index = serv.vnfunctions.getIndexVNF(lambda x: x.id_ == vnf.id_)
+                            serv.vnfunctions.items[vnf_index] = vnf
+                            index_serv = self.all_services.getIndexService(lambda x: x.id_ == serv.id_)
+                            self.all_services.items[index_serv] = serv
+                            vnf.to_dir()
+                            serv.to_dir()
+                            self.delete_deployment(vnf.name)
+                            self.all_pods.items.remove(this_pod)
+                            print('Pod %s deleted' % this_pod.metadata.name)
+                        elif this_pod.event == "task":
+                            task = self.all_tasks.getTask(lambda x: x.id_ == this_pod.id)
+                            task.completion_time = datetime.now()
+                            task.execution_time = abs((task.completion_time - task.starting_time).seconds)
+                            task.flow_time = abs((task.completion_time - task.task_arrival_time).seconds)
+                            task_index = self.all_tasks.getIndexTask(lambda x: x.id_ == task.id_)
+                            self.all_tasks.items[task_index] = task
+                            task.to_dir()
+                            self.delete_job(task.name)
+                            self.all_pods.items.remove(this_pod)
+                            print('Pod %s deleted' % this_pod.metadata.name)
+                        else:
+                            print('Error!! Some event must be detected')
+
         print('Number of Pods ', len(self.all_pods.items))
         self.status_lock.release()
-        self.garbage_old_pods()
+        #self.garbage_old_pods()
 
     def garbage_old_pods(self):
         """
@@ -199,3 +244,18 @@ class ClusterMonitor:
         :return:
         """
         pass
+
+    def delete_deployment(self, deployment_name):
+        try:
+            api_response = self.apps_v1.delete_namespaced_deployment(name=deployment_name, namespace="default", body=client.V1DeleteOptions(propagation_policy='Foreground', grace_period_seconds=5))
+            print("Deployment deleted. status='%s'" % str(api_response.status))
+        except ApiException as e:
+            print("Exception when calling AppsV1Api->delete_namespaced_deployment: %s\n" % e)
+
+    def delete_job(self, job_name):
+        try:
+            api_response = self.batch_v1.delete_namespaced_job(name=job_name, namespace="default", body=client.V1DeleteOptions(propagation_policy='Foreground', grace_period_seconds=5))
+            print("Job deleted. status='%s'" % str(api_response.status))
+        except ApiException as e:
+            print("Exception when calling BatchV1Api->delete_namespaced_job: %s\n" % e)
+        

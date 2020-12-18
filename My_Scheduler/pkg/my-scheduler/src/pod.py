@@ -31,6 +31,29 @@ class PodList(object):
     def __init__(self):
         self.items = []
 
+    def isPodList(self, filter):
+        found = False
+        if len(self.items) > 0:
+            for i in self.items:
+                if filter(i):
+                    found = True
+            if found:
+                return True
+            else:
+                return False
+        else:
+            return False
+
+    def getPod(self, filter):
+        for i in self.items:
+            if filter(i):
+                return i
+
+    def getIndexPod(self, filter):
+        for i,x in enumerate(self.items):
+            if filter(x):
+                return i
+
 class Pod(object):
     def __init__(self, metadata_, spec_, status_):
         """
@@ -53,12 +76,14 @@ class Pod(object):
         self.id = None
         self.service_id = None
         self.deadline = None
-        self.running_time_task = None
+        self.running_time = None
         self.service_arrival_time = None
+        self.task_arrival_time = None
         self.rank = None
         self.priority = None
         self.usage = []
         self.is_alive = True
+        self.event = None
 
         # label set priority for this pod
         self.scheduling_criteria = None
@@ -72,12 +97,13 @@ class Pod(object):
                 'Id': self.id, 
                 'Name': self.metadata.name,
                 'Demanded_processing': self.demanded_processing,
-                'Running_time': self.running_time_task,
+                'Running_time': self.running_time,
                 'Deadline': str(self.deadline),
                 'Service_arrival_time': str(self.service_arrival_time),
                 'Priority': self.priority,
                 'Scheduling_criteria': self.scheduling_criteria,
                 'Rank': self.rank,
+                'Event': self.event
             })
 
     def fetch_usage(self):
