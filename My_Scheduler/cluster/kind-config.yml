@@ -29,7 +29,35 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 # the control plane node config
 - role: control-plane
+  image: kindest/node:v1.19.1
+  # kubeadmConfigPatches:
+  # - |
+  #   kind: InitConfiguration
+  #   nodeRegistration:
+  #     kubeletExtraArgs:
+  #       system-reserved: memory=6Gi,cpu=2   
 # the three workers
 - role: worker
+  image: kindest/node:v1.19.1
+  # kubeadmConfigPatches:
+  # - |
+  #   kind: JoinConfiguration
+  #   nodeRegistration:
+  #     kubeletExtraArgs:
+  #       system-reserved: memory=6Gi,cpu=2
 - role: worker
+  image: kindest/node:v1.19.1
+  # kubeadmConfigPatches:
+  # - |
+  #   kind: JoinConfiguration
+  #   nodeRegistration:
+  #     kubeletExtraArgs:
+  #       system-reserved: memory=6Gi,cpu=2
 - role: worker
+  image: kindest/node:v1.19.1
+  # kubeadmConfigPatches:
+  # - |
+  #   kind: JoinConfiguration
+  #   nodeRegistration:
+  #     kubeletExtraArgs:
+  #       system-reserved: memory=6Gi,cpu=2

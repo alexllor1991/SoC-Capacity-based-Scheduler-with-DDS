@@ -7,7 +7,7 @@
 
 
 # if set to 1, create dashboard
-create_dashboard=1
+create_dashboard=0
 # if set to 1 create admin account
 create_admin=1
 # if set to 1 create metrics server deployment
