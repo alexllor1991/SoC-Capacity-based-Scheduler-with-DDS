@@ -46,3 +46,9 @@ sudo ./setup.sh
 sudo ./deploy.sh 'my-scheduler'
 
 4. Verify in the dashboard that a deployment and pod named my_scheduler have been created.
+
+5. An option to the native kubernetes dashboard is Lens Ide. You can downloaded from this link:
+
+https://github.com/lensapp/lens/releases/tag/v4.0.4
+
+6. After its installation, run the command 'kubectl config view --raw' to get your kubeconfig information. Then, you can add your kubernetes cluster to Lens using that information.
