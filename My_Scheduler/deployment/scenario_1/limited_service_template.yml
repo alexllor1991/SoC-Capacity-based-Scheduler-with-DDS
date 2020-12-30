@@ -1,0 +1,43 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: foo01
+spec:
+  ttlSecondsAfterFinished: 10
+  #activeDeadlineSeconds: 100
+  template:
+    metadata:
+      annotations:
+        event: "service"
+        service_id: "10"
+        service_name: "ser0"
+        service_deadline: "2020-12-11 18:12:11"
+        service_running_time: "0"
+        service_priority: "0"
+        required_service_rate: "300"
+        vnf_id: "1"
+        vnf_name: "foo01"
+      labels:
+        app: foo01
+    spec:
+      schedulerName: my-scheduler
+      containers:
+      - name: foo01
+        image: alexllor1991/cpu_stress:latest
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            memory: "300Mi"
+            cpu: "300m"
+          #limits:
+          #  memory: "500M"
+          #  cpu: "400m"
+        volumeMounts:
+          - name: tz-paris
+            mountPath: /etc/localtime
+      restartPolicy: Never
+      volumes:
+        - name: tz-paris
+          hostPath:
+              path: /etc/localtime
