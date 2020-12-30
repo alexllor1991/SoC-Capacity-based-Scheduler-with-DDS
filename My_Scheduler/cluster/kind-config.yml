@@ -30,6 +30,9 @@ nodes:
 # the control plane node config
 - role: control-plane
   image: kindest/node:v1.19.1
+  extraMounts:
+  - hostPath: /usr/share/zoneinfo/Europe/Paris
+    containerPath: /etc/localtime
   # kubeadmConfigPatches:
   # - |
   #   kind: InitConfiguration
@@ -39,6 +42,9 @@ nodes:
 # the three workers
 - role: worker
   image: kindest/node:v1.19.1
+  extraMounts:
+  - hostPath: /usr/share/zoneinfo/Europe/Paris
+    containerPath: /etc/localtime
   # kubeadmConfigPatches:
   # - |
   #   kind: JoinConfiguration
@@ -47,6 +53,9 @@ nodes:
   #       system-reserved: memory=6Gi,cpu=2
 - role: worker
   image: kindest/node:v1.19.1
+  extraMounts:
+  - hostPath: /usr/share/zoneinfo/Europe/Paris
+    containerPath: /etc/localtime
   # kubeadmConfigPatches:
   # - |
   #   kind: JoinConfiguration
@@ -55,6 +64,9 @@ nodes:
   #       system-reserved: memory=6Gi,cpu=2
 - role: worker
   image: kindest/node:v1.19.1
+  extraMounts:
+  - hostPath: /usr/share/zoneinfo/Europe/Paris
+    containerPath: /etc/localtime
   # kubeadmConfigPatches:
   # - |
   #   kind: JoinConfiguration
