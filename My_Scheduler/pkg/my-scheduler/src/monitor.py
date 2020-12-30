@@ -1,5 +1,6 @@
 import time
 import os
+import csv
 import logging
 from time import sleep
 from datetime import datetime
@@ -44,6 +45,39 @@ class ClusterMonitor:
         self.all_tasks = TaskList()
         self.pods_not_to_garbage = []
 
+        self.requested_services = 0
+        self.scheduled_services = 0
+        self.requested_VNFs = 0
+        self.scheduled_VNFs = 0
+        self.requested_tasks = 0
+        self.scheduled_tasks = 0
+        self.rejected_services = 0
+        self.rejected_VNFs = 0
+        self.rejected_tasks = 0
+        self.deadline_violations = 0
+
+        self.fieldnames_events = ['Timestamp',
+                                  'Event',
+                                  'Name',
+                                  'Id',
+                                  'Service_Id',
+                                  'Service_Name',
+                                  'Service_arrival_time',
+                                  'Task_arrival_time',
+                                  'Demanded_rate',
+                                  'Running_time',
+                                  'Deadline',
+                                  'Priority',
+                                  'Waiting_time',
+                                  'Starting_time',
+                                  'Completion_time',
+                                  'Execution_time',
+                                  'Flow_time',
+                                  'Assigned_node']
+
+        self.max_cpu_per_node = settings.TOTAL_CPU_CLUSTER / settings.NUMBER_NODES_CLUSTER
+        self.max_mem_per_node = settings.TOTAL_MEMORY_CLUSTER / settings.NUMBER_NODES_CLUSTER
+
     def print_nodes_stats(self):
         """
         Print node stats
@@ -75,6 +109,10 @@ class ClusterMonitor:
                     self.all_nodes.items.append(node)
             for node_ in self.all_nodes.items:
                 node_.update_node(self.all_pods)
+                if node_.usage['cpu'] >= self.max_cpu_per_node and node_.spec.unschedulable is not True:
+                    node_.spec.unschedulable = True
+                if node_.usage['cpu'] < self.max_cpu_per_node and node_.spec.unschedulable is True:
+                    node_.spec.unschedulable = False
                 index = self.all_nodes.getIndexNode(lambda x: x.metadata.name == node_.metadata.name)
                 self.all_nodes.items[index] = node_
             self.status_lock.release()
@@ -87,8 +125,9 @@ class ClusterMonitor:
         :return:
         """
         print('Monitor runner started')
+        print('Maximum cpu capacity per node: ' + str(self.max_cpu_per_node))
+        print('Maximum memory capacity per node: ' + str(self.max_mem_per_node))
         while True:
-            #print('monitor tick')
             self.update_pods()
             time.sleep(self.time_interval)
 
@@ -175,7 +214,7 @@ class ClusterMonitor:
                                 print('Unknown metrics server error %s' % res)
                             break
 
-                        # print('Updated metrics for pod %s' % pod.metadata.name)
+                        print('Updated metrics for pod %s' % pod.metadata.name)
 
                         break
 
@@ -194,25 +233,35 @@ class ClusterMonitor:
                             serv = self.all_services.getService(lambda x: x.id_ == this_pod.service_id)
                             vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == this_pod.id)
                             vnf.completion_time = datetime.now()
-                            vnf.makespan = abs((vnf.completion_time - vnf.starting_time).seconds)
+                            if vnf.completion_time > vnf.deadline:
+                                self.deadline_violations += 1
+                            vnf.execution_time = abs((vnf.completion_time - vnf.starting_time).seconds)
+                            vnf.flow_time = abs((vnf.completion_time - serv.arrival_time).seconds)
                             if vnf.id_ == serv.vnfunctions.items[-1].id_:
                                 serv.makespan = abs((vnf.completion_time - serv.arrival_time).seconds)
                             vnf_index = serv.vnfunctions.getIndexVNF(lambda x: x.id_ == vnf.id_)
                             serv.vnfunctions.items[vnf_index] = vnf
                             index_serv = self.all_services.getIndexService(lambda x: x.id_ == serv.id_)
                             self.all_services.items[index_serv] = serv
-                            vnf.to_dir()
+                            self.update_events_file(this_pod.event, vnf.name, vnf.id_, serv.id_, serv.name, vnf.service_arrival_time, None, vnf.r_rate, vnf.running_time, vnf.deadline, vnf.priority, vnf.waiting_time, vnf.starting_time, vnf.completion_time, vnf.execution_time, vnf.flow_time, vnf.in_node)
+                            #vnf.to_dir()
                             serv.to_dir()
-                            self.delete_deployment(vnf.name)
+                            if int(serv.running_time) > 0:
+                                self.delete_job(vnf.name)
+                            else:
+                                self.delete_deployment(vnf.name)
                             self.all_pods.items.remove(this_pod)
                             print('Pod %s deleted' % this_pod.metadata.name)
                         elif this_pod.event == "task":
                             task = self.all_tasks.getTask(lambda x: x.id_ == this_pod.id)
                             task.completion_time = datetime.now()
+                            if task.completion_time > task.deadline:
+                                self.deadline_violations += 1
                             task.execution_time = abs((task.completion_time - task.starting_time).seconds)
                             task.flow_time = abs((task.completion_time - task.task_arrival_time).seconds)
                             task_index = self.all_tasks.getIndexTask(lambda x: x.id_ == task.id_)
                             self.all_tasks.items[task_index] = task
+                            self.update_events_file(this_pod.event, task.name, task.id_, None, None, None, task.task_arrival_time, task.r_rate, task.running_time, task.deadline, task.priority, task.waiting_time, task.starting_time, task.completion_time, task.execution_time, task.flow_time, task.in_node)
                             task.to_dir()
                             self.delete_job(task.name)
                             self.all_pods.items.remove(this_pod)
@@ -258,4 +307,27 @@ class ClusterMonitor:
             print("Job deleted. status='%s'" % str(api_response.status))
         except ApiException as e:
             print("Exception when calling BatchV1Api->delete_namespaced_job: %s\n" % e)
+
+    def update_events_file(self, event, name, id, serv_id, serv_name, serv_arrival_time, task_arrival_time, demanded_rate, running_time, deadline, priority, waiting_time, starting_time, completion_time, execution_time, flow_time, assigned_node):
+        
+        with open('Events.csv', 'a', buffering=1) as csvfile3:
+            writer3 = csv.DictWriter(csvfile3, fieldnames=self.fieldnames_events)
+            writer3.writerow({'Timestamp': str(datetime.now()),
+                              'Event': str(event),
+                              'Name': str(name),
+                              'Id': str(id),
+                              'Service_Id': str(serv_id),
+                              'Service_Name': str(serv_name),
+                              'Service_arrival_time': str(serv_arrival_time),
+                              'Task_arrival_time': str(task_arrival_time),
+                              'Demanded_rate': str(demanded_rate),
+                              'Running_time': str(running_time),
+                              'Deadline': str(deadline),
+                              'Priority': str(priority),
+                              'Waiting_time': str(waiting_time),
+                              'Starting_time': str(starting_time),
+                              'Completion_time': str(completion_time),
+                              'Execution_time': str(execution_time),
+                              'Flow_time': str(flow_time),
+                              'Assigned_node': str(assigned_node)})
         

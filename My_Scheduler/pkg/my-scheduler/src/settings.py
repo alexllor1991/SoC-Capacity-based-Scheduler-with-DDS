@@ -1,6 +1,6 @@
 LIMIT_OF_RECORDS = 1000
 
-NUMBER_OF_CORE = 20 #12
+NUMBER_OF_CORE = 20 # 12
 
 TOTAL_CPU_CLUSTER = NUMBER_OF_CORE * 1000 # value expressed in milli units of CPU
 
@@ -14,7 +14,6 @@ MIX_METRICS = False
 TIME_INTERVAL = 3
 
 LOG_FILE = '/tmp/usage.log'
-RESULT_FILE = 'tmp/result.csv'
 
 MIN_PROCESS_CAPACITY = 500  #value in MIPS (Million of Instruction per Second) taken from paper Q-learning based dynamic task scheduling for energy-efficient cloud computing
 

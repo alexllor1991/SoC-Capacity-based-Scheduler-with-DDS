@@ -157,10 +157,10 @@ class VNFunction(object):
         self.priority = None
         self.starting_time = None  # starting time of the VNF processing in node (datetime)
         self.completion_time = None # completion time of the VNF processing in node (datetime)
-        #self.processing_time = None # processing time of the function in mapped node (float)
         self.waiting_time = None  # waiting time of the VNF to be processed (arrival_time_first_VNF - current_time)  (float)
         self.in_node = None  # node where the function is mapped
-        self.makespan = None  # total time of the VNF in the system (completion_time - starting_time) (float)
+        self.flow_time = None  # total time of the VNF in the system (completion_time - service_arrival_time) (float)
+        self.execution_time = None #  execution time of the VNF (completion_time - starting_time) (float)
 
     def to_dir(self):
         print( \
@@ -176,8 +176,9 @@ class VNFunction(object):
                 'Starting_time': str(self.starting_time),
                 'Completion_time': str(self.completion_time),
                 'Waiting_time': self.waiting_time,
+                'Execution_time': self.execution_time,
                 'Assigned_node': self.in_node,
-                'Makespan_VNF': self.makespan,
+                'Flow_time': self.flow_time,
             })
 
 class Task(object):
@@ -202,7 +203,6 @@ class Task(object):
         self.task_arrival_time = None  # arrival time of the task (datetime)
         self.starting_time = None  # starting time of the task processing in node (datetime)
         self.completion_time = None # completion time of the task processing (datetime)
-        #self.processing_time = None # processing time of the task in mapped node (float)
         self.waiting_time = None  # waiting time of the task to be processed (arrival_time - current_time)  (float)
         self.in_node = None  # node where the task is mapped
         self.execution_time = None # execution time of the task (completion_time - starting_time) (float)
