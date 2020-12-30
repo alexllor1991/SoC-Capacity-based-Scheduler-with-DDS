@@ -64,6 +64,9 @@ spec:
         - name: my-scheduler
           image: my-scheduler:5e6c11a
           imagePullPolicy: Never
+          volumeMounts:
+            - name: tz-paris
+              mountPath: /etc/localtime
       nodeSelector:
         kubernetes.io/hostname: kind-control-plane
       tolerations:
@@ -72,4 +75,7 @@ spec:
           operator: "Exists"
       hostNetwork: false
       hostPID: false
-      volumes: []
+      volumes:
+        - name: tz-paris
+          hostPath:
+              path: /etc/localtime
