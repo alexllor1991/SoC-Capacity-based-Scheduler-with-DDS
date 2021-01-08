@@ -20,8 +20,8 @@ deadline_service = ''
 running_service_time = ''
 service_priority = ''
 service_rate = ''
-_lambda = 10  # Execution events rate events/min
-_number_events = 50
+_lambda = 5  # Execution events rate events/min
+_number_events = 25
 _inter_event_times = []
 _event_numbers = []
 _event_times = []
@@ -67,9 +67,9 @@ for i in range(_number_events):
             documents['spec']['template']['metadata']['annotations']['task_id'] = str(uuid.uuid4())
             documents['spec']['template']['metadata']['annotations']['task_name'] = name_task + random_string
             documents['spec']['template']['metadata']['annotations']['task_deadline'] = str(deadline_task)
-            documents['spec']['template']['metadata']['annotations']['task_running_time'] = str(random.randint(0, 100))
+            documents['spec']['template']['metadata']['annotations']['task_running_time'] = str(random.randint(1, 100))
             documents['spec']['template']['metadata']['annotations']['task_priority'] = str(random.randint(0,10))
-            documents['spec']['template']['metadata']['annotations']['task_required_rate'] = str(random.randint(0, 500))
+            documents['spec']['template']['metadata']['annotations']['task_required_rate'] = str(random.randint(1, 500))
             documents['spec']['template']['spec']['containers'][0]['resources']['requests']['memory'] = str(str(random_memory) + 'Mi')
             documents['spec']['template']['spec']['containers'][0]['resources']['requests']['cpu'] = str(str(random_cpu) + 'm')
             #documents['spec']['template']['spec']['containers'][0]['resources']['limits']['memory'] = str(str(random.randint(random_memory, 600)) + 'M')
@@ -101,7 +101,7 @@ for i in range(_number_events):
                     deadline_service = str(start + (end - start) * random.randint(1, 10))
                     running_service_time = "0"
                     service_priority = str(random.randint(0,10))
-                    service_rate = str(random.randint(0, 500))
+                    service_rate = str(random.randint(1, 500))
                 random_string = get_random_string(7)
                 random_cpu = random.randint(100, 250)
                 random_memory = random.randint(200, 500)
@@ -154,7 +154,7 @@ for i in range(_number_events):
                     start = datetime.now()
                     end = start + timedelta(minutes=deadline_difference)
                     deadline_service = str(start + (end - start) * random.randint(1, 10))
-                    running_service_time = str(random.randint(0, 100))
+                    running_service_time = str(random.randint(1, 100))
                     service_priority = str(random.randint(0,10))
                     service_rate = str(random.randint(0, 500))
                 random_string = get_random_string(7)
