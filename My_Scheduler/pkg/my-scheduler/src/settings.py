@@ -8,7 +8,7 @@ TOTAL_MEMORY_CLUSTER = 52407392 # 26153684 value expressed in Ki
 
 NUMBER_NODES_CLUSTER = 4
 
-MIX_METRICS = False
+MIX_METRICS = True
 
 # refresh interval in seconds
 TIME_INTERVAL = 3

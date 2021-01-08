@@ -44,31 +44,6 @@ class Scheduler:
                                    'Rejected_tasks',
                                    'Deadline_violations']
 
-        self.fieldnames_usage_node = ['Timestamp',
-                                      'Node',
-                                      'CPU',
-                                      'Memory',
-                                      'Proc_Capacity']
-
-        # self.fieldnames_events = ['Timestamp',
-        #                           'Event',
-        #                           'Name',
-        #                           'Id',
-        #                           'Service_Id',
-        #                           'Service_Name',
-        #                           'Service_arrival_time',
-        #                           'Task_arrival_time',
-        #                           'Demanded_rate',
-        #                           'Running_time',
-        #                           'Deadline',
-        #                           'Priority',
-        #                           'Waiting_time',
-        #                           'Starting_time',
-        #                           'Completion_time',
-        #                           'Execution_time',
-        #                           'Flow_time',
-        #                           'Assigned_node']
-
     def run(self):
         """
         Main thread, run and listen for events,
@@ -90,15 +65,14 @@ class Scheduler:
                 for eventpod in self.watcherpod.stream(self.v1.list_pod_for_all_namespaces):    
 
                     if eventpod['type'] == 'ADDED' and eventpod['object'].spec.scheduler_name == self.scheduler_name:
-                        if eventpod['object'].metadata.annotations['event'] == "service":
+                        event_name = str(eventpod['object'].metadata.name)
+                        if eventpod['object'].metadata.annotations['event'] == "service" or event_name.startswith('vnf'):
                             if not self.monitor.all_services.isServiceList(lambda x: x.id_ == eventpod['object'].metadata.annotations['service_id']):
                                 new_service = Service(eventpod['object'].metadata.annotations['service_id'], eventpod['object'].metadata.annotations['service_name'], eventpod['object'].metadata.annotations['service_deadline'], eventpod['object'].metadata.annotations['service_priority'], eventpod['object'].metadata.annotations['service_running_time'])
                                 print ('New service ADDED', new_service.name)
                                 new_service.arrival_time = datetime.now()
-                                #new_service.to_dir()
                                 self.monitor.all_services.items.append(new_service)
                                 self.monitor.requested_services += 1
-                                print(self.monitor.all_services.items)
                             serv = self.monitor.all_services.getService(lambda x: x.id_ == eventpod['object'].metadata.annotations['service_id'])
                         
                             if not serv.vnfunctions.isVNFList(lambda x: x.id_ == eventpod['object'].metadata.annotations['vnf_id']):
@@ -113,31 +87,29 @@ class Scheduler:
                                 serv.vnfunctions.items.sort(key=lambda x: x.id_, reverse=False)
                                 self.monitor.requested_VNFs += 1
                             self.vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == eventpod['object'].metadata.annotations['vnf_id'])
-                        
-                            print(serv.vnfunctions.items)
+
                             index = self.monitor.all_services.getIndexService(lambda x: x.id_ == serv.id_)
                             self.monitor.all_services.items[index] = serv
 
-                        elif eventpod['object'].metadata.annotations['event'] == "task":
+                        elif eventpod['object'].metadata.annotations['event'] == "task" or event_name.startswith('task'):
                             if not self.monitor.all_tasks.isTaskList(lambda x: x.id_ == eventpod['object'].metadata.annotations['task_id']):
                                 new_task_deadline = parser.parse(eventpod['object'].metadata.annotations['task_deadline'])
                                 new_task = Task(eventpod['object'].metadata.annotations['task_id'], eventpod['object'].metadata.annotations['task_name'], new_task_deadline, eventpod['object'].metadata.annotations['task_priority'], eventpod['object'].metadata.annotations['task_running_time'], eventpod['object'].metadata.annotations['task_required_rate'])
                                 print ('New task ADDED', new_task.name)
                                 new_task.task_arrival_time = datetime.now()
-                                #new_task.to_dir()
                                 self.monitor.update_events_file(eventpod['object'].metadata.annotations['event'], new_task.name, new_task.id_, None, None, None, new_task.task_arrival_time, new_task.r_rate, new_task.running_time, new_task.deadline, new_task.priority, None, None, None, None, None, None)
                                 self.monitor.all_tasks.items.append(new_task)
                                 self.monitor.requested_tasks += 1
-                                print(self.monitor.all_tasks.items)
                             self.task = self.monitor.all_tasks.getTask(lambda x: x.id_ == eventpod['object'].metadata.annotations['task_id'])
 
                         else:
                             print('None event was detected')
+                            continue
 
                         new_pod = Pod(eventpod['object'].metadata, eventpod['object'].spec, eventpod['object'].status)
                         new_pod.scheduling_criteria = settings.SCHEDULING_CRITERIA
 
-                        if eventpod['object'].metadata.annotations['event'] == "service":
+                        if eventpod['object'].metadata.annotations['event'] == 'service' or event_name.startswith('vnf'):
                             new_pod.demanded_processing = self.vnf.r_rate
                             new_pod.id = self.vnf.id_
                             new_pod.service_id = self.vnf.serviceid
@@ -146,7 +118,7 @@ class Scheduler:
                             new_pod.service_arrival_time = self.vnf.service_arrival_time
                             new_pod.priority = self.vnf.priority
                             new_pod.event = 'service'
-                        elif eventpod['object'].metadata.annotations['event'] == "task":
+                        elif eventpod['object'].metadata.annotations['event'] =='task' or event_name.startswith('task'):
                             new_pod.demanded_processing = self.task.r_rate
                             new_pod.id = self.task.id_
                             new_pod.deadline = self.task.deadline
@@ -157,31 +129,38 @@ class Scheduler:
                         else:
                             print('None event was detected')
                         
-                        print('New pod ADDED', new_pod.metadata.name)
-                        new_pod.to_dir()
+                        self.monitor.status_lock.acquire(blocking=True)
+
                         if not self.monitor.all_pods.isPodList(lambda x: x.metadata.name == new_pod.metadata.name):
                             self.monitor.all_pods.items.append(new_pod)
+                            print('New pod ADDED', new_pod.metadata.name)
                         else:
                             index_pod = self.monitor.all_pods.getIndexPod(lambda x: x.metadata.name == new_pod.metadata.name)
                             self.monitor.all_pods.items[index_pod] = new_pod
-                        
-                        print('Putting new pod in priority list')
+                            print('UPDATED pod', new_pod.metadata.name)
+
+                        self.monitor.status_lock.release()
+
                         if settings.PRIORITY_LIST_CRITERIA == 0: # priority list is sorted by taking into account the service deadline
-                            print('Sorting by deadline')
+                            new_pod.to_dir()
                             prov_list = list(self.priority_list)
                             prov_list.append(new_pod)
                             prov_list.sort(key=lambda x: x.deadline, reverse=False)
                             self.priority_list = prov_list.copy()
                         elif settings.PRIORITY_LIST_CRITERIA == 1: # priority list is sorted by taking into account the service priority
-                            print('Sorting by priority')
+                            new_pod.to_dir()
                             prov_list = list(self.priority_list)
                             prov_list.append(new_pod)
                             prov_list.sort(key=lambda x: x.priority, reverse=True)
                             self.priority_list = prov_list.copy()
                         elif settings.PRIORITY_LIST_CRITERIA == 2: # priority list is sorted dynamically by taking into account an equation
-                            print('Sorting dynamically')
-                            task_delay = abs((new_pod.deadline - datetime.now() - timedelta(seconds=int(new_pod.running_time))).seconds) 
-                            waiting_time = abs((datetime.now() - new_pod.service_arrival_time).seconds)
+                            task_delay = abs((new_pod.deadline - datetime.now() - timedelta(seconds=int(new_pod.running_time))).seconds)
+                            if new_pod.event == 'service': 
+                                waiting_time = abs((datetime.now() - new_pod.service_arrival_time).seconds)
+                            elif new_pod.event == 'task':
+                                waiting_time = abs((datetime.now() - new_pod.task_arrival_time).seconds)
+                            else:
+                                waiting_time = 0
                             rank = (settings.delta_1 * task_delay) - (settings.delta_2 * waiting_time)
                             new_pod.rank = rank
                             prov_list = list(self.priority_list)
@@ -191,8 +170,6 @@ class Scheduler:
                             self.priority_list = prov_list.copy()
                         else:
                             print('None priority list criteria has been set')
-
-                        print('Pod introduced in priority list')
 
             except Exception as e:
                 print(str(e))
@@ -205,17 +182,8 @@ class Scheduler:
         """
         self.monitor.update_nodes()
 
-        # nodes_names = ''
-
-        # for node in self.monitor.all_nodes.items:
-        #     nodes_names += str(node.metadata.name)
-        #     nodes_names += ':'
-
-        # nodes_names = nodes_names[:-1]
-        # logging.info(nodes_names)
-
         with open('Usage.csv', 'w', buffering=1) as csvfile1:
-            writer1 = csv.DictWriter(csvfile1, fieldnames=self.fieldnames_usage_node)
+            writer1 = csv.DictWriter(csvfile1, fieldnames=self.monitor.fieldnames_usage_node)
             writer1.writeheader()
 
         with open('Results.csv', 'w', buffering=1) as csvfile2:
@@ -226,18 +194,7 @@ class Scheduler:
             writer3 = csv.DictWriter(csvfile3, fieldnames=self.monitor.fieldnames_events)
             writer3.writeheader()
 
-    def update_usage_result_files(self):
-
-        for node in self.monitor.all_nodes.items:
-            logging.info(node.metadata.name + ' ' + 'CPU:' + str(node.usage['cpu']) + ' ' + 'Memory:' + str(node.usage['memory']) + ' ' + 'Proc_Capacity:' + str(node.proc_capacity))
-
-            with open('Usage.csv', 'a', buffering=1) as csvfile1:
-                writer1 = csv.DictWriter(csvfile1, fieldnames=self.fieldnames_usage_node)
-                writer1.writerow({'Timestamp': str(datetime.now()),
-                                  'Node': str(node.metadata.name),
-                                  'CPU': str(node.usage['cpu']),
-                                  'Memory': str(node.usage['memory']), 
-                                  'Proc_Capacity': str(node.proc_capacity)})
+    def update_result_files(self):
 
         with open('Results.csv', 'a', buffering=1) as csvfile2:
             writer2 = csv.DictWriter(csvfile2, fieldnames=self.fieldnames_results)
@@ -253,41 +210,18 @@ class Scheduler:
                              'Rejected_tasks': str(self.monitor.rejected_tasks),
                              'Deadline_violations': str(self.monitor.deadline_violations)})
 
-    # def update_events_file(self, event, name, id, serv_id, serv_name, serv_arrival_time, task_arrival_time, demanded_rate, running_time, deadline, priority, waiting_time, starting_time, completion_time, execution_time, flow_time, assigned_node):
-        
-    #     with open('Events.csv', 'a', buffering=1) as csvfile3:
-    #         writer3 = csv.DictWriter(csvfile3, fieldnames=self.fieldnames_events)
-    #         writer3.writerow({'Timestamp': str(datetime.now()),
-    #                           'Event': str(event),
-    #                           'Name': str(name),
-    #                           'Id': str(id),
-    #                           'Service_Id': str(serv_id),
-    #                           'Service_Name': str(serv_name),
-    #                           'Service_arrival_time': str(serv_arrival_time),
-    #                           'Task_arrival_time': str(task_arrival_time),
-    #                           'Demanded_rate': str(demanded_rate),
-    #                           'Running_time': str(running_time),
-    #                           'Deadline': str(deadline),
-    #                           'Priority': str(priority),
-    #                           'Waiting_time': str(waiting_time),
-    #                           'Starting_time': str(starting_time),
-    #                           'Completion_time': str(completion_time),
-    #                           'Execution_time': str(execution_time),
-    #                           'Flow_time': str(flow_time),
-    #                           'Assigned_node': str(assigned_node)})
-
     def scheduler_runner(self):
         while True:
             if len(self.priority_list) > 0:
                 try:
-                    print('Printing priority list')
-                    print(self.priority_list)
 
                     self.monitor.update_nodes()
 
-                    self.update_usage_result_files()
+                    self.monitor.update_usage_file()
+
+                    self.update_result_files()
             
-                    self.monitor.print_nodes_stats()
+                    #self.monitor.print_nodes_stats()
 
                     obj = self.priority_list.pop(0)
 
@@ -301,6 +235,10 @@ class Scheduler:
                         block scheduling thread until newly created Pod is ready
                         """
                         self.monitor.wait_for_pod(obj)
+                        pod = self.monitor.all_pods.getPod(lambda x: x.metadata.name == obj.metadata.name)
+                        pod.spec.node_name = new_node.metadata.name
+                        index_pod = self.monitor.all_pods.getIndexPod(lambda x: x.metadata.name == pod.metadata.name)
+                        self.monitor.all_pods.items[index_pod] = pod
                         if obj.event == "service":
                             serv = self.monitor.all_services.getService(lambda x: x.id_ == obj.service_id)
                             vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == obj.id)
@@ -317,11 +255,11 @@ class Scheduler:
                                 self.monitor.scheduled_services += 1
                             index_serv = self.monitor.all_services.getIndexService(lambda x: x.id_ == serv.id_)
                             self.monitor.all_services.items[index_serv] = serv
-                            self.monitor.update_nodes()
-                            self.update_usage_result_files()
+                            # self.monitor.update_nodes()
+                            # self.monitor.update_usage_file()
+                            self.update_result_files()
                             self.monitor.update_events_file(obj.event, vnf.name, vnf.id_, serv.id_, serv.name, vnf.service_arrival_time, None, vnf.r_rate, vnf.running_time, vnf.deadline, vnf.priority, vnf.waiting_time, vnf.starting_time, None, None, None, vnf.in_node)
-                            #vnf.to_dir()
-                            serv.to_dir()
+
                         elif obj.event == "task":
                             task = self.monitor.all_tasks.getTask(lambda x: x.id_ == obj.id)
                             task.starting_time = datetime.now()
@@ -330,13 +268,14 @@ class Scheduler:
                             self.monitor.scheduled_tasks += 1
                             task_index = self.monitor.all_tasks.getIndexTask(lambda x: x.id_ == task.id_)
                             self.monitor.all_tasks.items[task_index] = task
-                            self.monitor.update_nodes()
-                            self.update_usage_result_files()
+                            # self.monitor.update_nodes()
+                            # self.monitor.update_usage_file()
+                            self.update_result_files()
                             self.monitor.update_events_file(obj.event, task.name, task.id_, None, None, None, task.task_arrival_time, task.r_rate, task.running_time, task.deadline, task.priority, task.waiting_time, task.starting_time, None, None, None, task.in_node)
-                            #task.to_dir()
+
                         else:
                             print('Event could not be updated')
-                        self.monitor.update_pods()
+                        #self.monitor.update_pods()
 
                     else:
                         print('Pod cannot be scheduled..')
@@ -358,16 +297,11 @@ class Scheduler:
         """
         possible_nodes = self.filter_nodes(pod)
 
-        print('Possible nodes')
-        for node in possible_nodes.items:
-            print(node.metadata.name)
-
         selected_node = self.score_nodes(pod, possible_nodes)
 
-        if selected_node is not None:
-            print('Selected Node', selected_node.metadata.name)
-        else:
+        if selected_node is None:
             print('No node was being selected')
+            
         return selected_node
 
     def filter_nodes(self, pod):
@@ -401,22 +335,42 @@ class Scheduler:
                         numberVNFs = len(serv.vnfunctions.items)
                         for i in serv.vnfunctions.items[:]:
                             self.monitor.delete_deployment(i.name)
+
+                        self.monitor.status_lock.acquire(blocking=True)
+
                         self.monitor.all_services.items.remove(serv)
                         for i in self.monitor.all_pods.items[:]:
                             if i.service_id == serv.id_:
                                 self.monitor.all_pods.items.remove(i)
                                 print('Pod %s deleted' % i.metadata.name)
+
+                        self.monitor.status_lock.release()
+
+                        # self.monitor.update_nodes()
+                        # self.monitor.update_usage_file()
+
                         self.monitor.rejected_services += 1
                         self.monitor.rejected_VNFs += numberVNFs
+
                     elif pod.event == "task":
                         task = self.monitor.all_tasks.getTask(lambda x: x.id_ == pod.id)
                         self.monitor.delete_job(task.name)
+
+                        self.monitor.status_lock.acquire(blocking=True)
+
                         self.monitor.all_tasks.items.remove(task)
                         self.monitor.all_pods.items.remove(pod)
                         print('Pod %s deleted' % pod.metadata.name)
+
+                        self.monitor.status_lock.release()
+
+                        # self.monitor.update_nodes()
+                        # self.monitor.update_usage_file()
+
                         self.monitor.rejected_tasks += 1
                     else:
-                        print('Error!! Some event must be detected')
+                        print('Error! Some event must be detected')
+                        break
 
         return return_node_list
 
@@ -440,31 +394,28 @@ class Scheduler:
             best_node = node_list.items[0]
 
         else:
-
             best_node = node_list.items[0]
 
             for node in node_list.items:
-                print(node.metadata.name, node.usage)
 
                 if pod.scheduling_criteria == 1:
-                    print('Running scoring process taking into account available memory')
+                    #print('Running scoring process taking into account available memory')
                     if (self.monitor.max_mem_per_node - node.usage['memory']) > (self.monitor.max_mem_per_node - best_node.usage['memory']):
                         best_node = node
 
                 elif pod.scheduling_criteria == 2:
-                    print('Running scoring process taking into account available cpu')
+                    #print('Running scoring process taking into account available cpu')
                     if (self.monitor.max_cpu_per_node - node.usage['cpu']) > (self.monitor.max_cpu_per_node - best_node.usage['cpu']):
                         best_node = node
 
                 elif pod.scheduling_criteria == 3:
-                    print('Running scoring process taking into account the best processing capacity')
+                    #print('Running scoring process taking into account the best processing capacity')
                     if node.proc_capacity > best_node.proc_capacity:
                         best_node = node
 
                 else:
                     print('None running scoring process was selected')
                     pass
-                print('Current best: ' + best_node.metadata.name)
 
         print('Selected node:')
         print(best_node.metadata.name, best_node.usage)

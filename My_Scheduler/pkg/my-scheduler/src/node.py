@@ -53,6 +53,9 @@ class Node(object):
         :return:
         """
         self.pods = self.get_pods_on_node(pod_list)
+        for p in self.pods.items:
+            if not pod_list.isPodList(lambda x: x.metadata.name == p.metadata.name):
+                self.pods.items.remove(p)
         self.proc_capacity = self.process_capacity()
         self.usage = self.get_node_usage()
 
@@ -62,13 +65,18 @@ class Node(object):
         Pods running on this node
         :return:
         """
+        # print("Updating " + self.metadata.name + " usage")
         memory = 0.0
         cpu = 0.0
         for pod in self.pods.items:
             if pod.is_alive:
                 # there can be pods not collected by garbage collector yet
-                memory += float(pod.get_usage()['memory'])
-                cpu += float(pod.get_usage()['cpu'])
+                use = pod.get_usage()
+                memory += float(use['memory'])
+                cpu += float(use['cpu'])
+        # print("Total usage in node " + self.metadata.name)
+        # print("CPU: " + str(cpu))
+        # print("Memory: " + str(memory))
 
         return {'cpu': cpu, 'memory': memory, 'proc_capacity': self.proc_capacity}
 

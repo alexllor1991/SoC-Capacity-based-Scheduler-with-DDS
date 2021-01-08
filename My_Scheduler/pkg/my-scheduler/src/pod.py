@@ -128,16 +128,16 @@ class Pod(object):
             return int(str(e)[1:4])
 
         # Pod usage is sum of usage of all containers running inside it
-        tmp_mem = 0
-        tmp_cpu = 0
+        tmp_mem = 0.0
+        tmp_cpu = 0.0
 
         for container in json_data['containers']:
             if not settings.MIX_METRICS:
                 # when Pod is in Error state, it containers usage is returned as 0
                 if container['usage']['memory'] != '0':
-                    tmp_mem += self.parse_usage_data(container['usage']['memory'], DataType.MEMORY)
+                    tmp_mem += float(self.parse_usage_data(container['usage']['memory'], DataType.MEMORY))
                 if container['usage']['cpu'] != '0':
-                    tmp_cpu += self.parse_usage_data(container['usage']['cpu'], DataType.CPU)
+                    tmp_cpu += float(self.parse_usage_data(container['usage']['cpu'], DataType.CPU))
 
             elif settings.MIX_METRICS:
                 # if container have specified req field use it instead of usage
@@ -154,22 +154,22 @@ class Pod(object):
                     # there can be only one param specified in requests
 
                     if 'cpu' in tmp_cont.resources.requests:
-                        tmp_cpu += self.parse_usage_data(tmp_cont.resources.requests['cpu'], DataType.CPU)
+                        tmp_cpu += float(self.parse_usage_data(tmp_cont.resources.requests['cpu'], DataType.CPU))
                     else:
                         if container['usage']['cpu'] != '0':
-                            tmp_cpu += self.parse_usage_data(container['usage']['cpu'], DataType.CPU)
+                            tmp_cpu += float(self.parse_usage_data(container['usage']['cpu'], DataType.CPU))
 
                     if 'memory' in tmp_cont.resources.requests:
-                        tmp_mem += self.parse_usage_data(tmp_cont.resources.requests['memory'], DataType.MEMORY)
+                        tmp_mem += float(self.parse_usage_data(tmp_cont.resources.requests['memory'], DataType.MEMORY))
                     else:
                         if container['usage']['memory'] != '0':
-                            tmp_mem += self.parse_usage_data(container['usage']['memory'], DataType.MEMORY)
+                            tmp_mem += float(self.parse_usage_data(container['usage']['memory'], DataType.MEMORY))
 
                 else:
                     if container['usage']['memory'] != '0':
-                        tmp_mem += self.parse_usage_data(container['usage']['memory'], DataType.MEMORY)
+                        tmp_mem += float(self.parse_usage_data(container['usage']['memory'], DataType.MEMORY))
                     if container['usage']['cpu'] != '0':
-                        tmp_cpu += self.parse_usage_data(container['usage']['cpu'], DataType.CPU)
+                        tmp_cpu += float(self.parse_usage_data(container['usage']['cpu'], DataType.CPU))
 
         if len(self.usage) > settings.LIMIT_OF_RECORDS:
             self.usage.pop(0)
@@ -210,7 +210,7 @@ class Pod(object):
                 else:
                     return None
 
-                return int(wage * value)
+                return float(wage * value)
 
             else:
                 if 'e' in data_string:
@@ -218,7 +218,7 @@ class Pod(object):
                     raise Exception('Not implemented')
                     # TODO implement this
 
-                return int(data_string)
+                return float(data_string)
 
         elif data_type == DataType.CPU:
 
@@ -246,8 +246,14 @@ class Pod(object):
             for entry in self.usage:
                 sum_cpu += float(entry['cpu'])
                 sum_mem += float(entry['memory'])
+            # print("Pod " + self.metadata.name)
+            # print("SumCPU: " + str(sum_cpu))
+            # print("SumMem: " + str(sum_mem))
+            # print(len(self.usage))
             avg_cpu = sum_cpu / len(self.usage)
             avg_mem = sum_mem / len(self.usage)
+            # print(avg_cpu)
+            # print(avg_mem)
             return {'cpu': avg_cpu, 'memory': avg_mem}
         else:
             return {'cpu': 0, 'memory': 0}
