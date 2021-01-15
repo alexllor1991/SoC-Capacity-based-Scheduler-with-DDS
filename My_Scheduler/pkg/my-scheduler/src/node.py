@@ -11,12 +11,23 @@ class NodeList(object):
     def __init__(self):
         self.items = []
 
-    def isNodeList(self, node_name):
-        for i in self.items:
-            if i.metadata.name == node_name:
+    def isNodeList(self, filter):
+        found = False
+        if len(self.items) > 0:
+            for i in self.items:
+                if filter(i):
+                    found = True
+            if found:
                 return True
             else:
                 return False
+        else:
+            return False
+
+    def getNode(self, filter):
+        for i in self.items:
+            if filter(i):
+                return i
 
     def getIndexNode(self, filter):
         for i,x in enumerate(self.items):

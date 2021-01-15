@@ -1,4 +1,5 @@
 import time
+import json
 import os
 import csv
 import logging
@@ -167,7 +168,7 @@ class ClusterMonitor:
 
                 if val == 0:
                     #print('Pod %s ready...' % new_pod.metadata.name)
-                    print(new_pod.usage)
+                    #print(new_pod.usage)
                     break
                 else:
                     #print('Pod %s not ready...' % new_pod.metadata.name)
@@ -196,7 +197,7 @@ class ClusterMonitor:
                             new_pod.usage.pop(0)
                         
                         new_pod.usage.append({'cpu': tmp_cpu, 'memory': tmp_mem})
-                        print(new_pod.usage)
+                        #print(new_pod.usage)
                         break
 
             else:
@@ -277,47 +278,63 @@ class ClusterMonitor:
                 for pod in self.all_pods.items:
                     if pod_.metadata.name == pod.metadata.name:
                         this_pod = self.all_pods.getPod(lambda x: x.metadata.name == pod.metadata.name)
+                        if this_pod.event is not None:
+                            if this_pod.event == "service":
+                                serv = self.all_services.getService(lambda x: x.id_ == this_pod.service_id)
+                                vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == this_pod.id)
+                                vnf.completion_time = datetime.now()
+                                if vnf.completion_time > vnf.deadline:
+                                    self.deadline_violations += 1
+                                vnf.execution_time = abs((vnf.completion_time - vnf.starting_time).seconds)
+                                vnf.flow_time = abs((vnf.completion_time - serv.arrival_time).seconds)
+                                if vnf.id_ == serv.vnfunctions.items[-1].id_:
+                                    serv.makespan = abs((vnf.completion_time - serv.arrival_time).seconds)
+                                vnf_index = serv.vnfunctions.getIndexVNF(lambda x: x.id_ == vnf.id_)
+                                serv.vnfunctions.items[vnf_index] = vnf
+                                index_serv = self.all_services.getIndexService(lambda x: x.id_ == serv.id_)
+                                self.all_services.items[index_serv] = serv
+                                self.update_events_file(this_pod.event, vnf.name, vnf.id_, serv.id_, serv.name, vnf.service_arrival_time, None, vnf.r_rate, vnf.running_time, vnf.deadline, vnf.priority, vnf.waiting_time, vnf.starting_time, vnf.completion_time, vnf.execution_time, vnf.flow_time, vnf.in_node)
+                                if int(serv.running_time) > 0:
+                                    self.delete_job(vnf.name)
+                                else:
+                                    self.delete_deployment(vnf.name)
+                                self.all_pods.items.remove(this_pod)
+                                print('Pod %s deleted' % this_pod.metadata.name)
 
-                        if this_pod.event == "service":
-                            serv = self.all_services.getService(lambda x: x.id_ == this_pod.service_id)
-                            vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == this_pod.id)
-                            vnf.completion_time = datetime.now()
-                            if vnf.completion_time > vnf.deadline:
-                                self.deadline_violations += 1
-                            vnf.execution_time = abs((vnf.completion_time - vnf.starting_time).seconds)
-                            vnf.flow_time = abs((vnf.completion_time - serv.arrival_time).seconds)
-                            if vnf.id_ == serv.vnfunctions.items[-1].id_:
-                                serv.makespan = abs((vnf.completion_time - serv.arrival_time).seconds)
-                            vnf_index = serv.vnfunctions.getIndexVNF(lambda x: x.id_ == vnf.id_)
-                            serv.vnfunctions.items[vnf_index] = vnf
-                            index_serv = self.all_services.getIndexService(lambda x: x.id_ == serv.id_)
-                            self.all_services.items[index_serv] = serv
-                            self.update_events_file(this_pod.event, vnf.name, vnf.id_, serv.id_, serv.name, vnf.service_arrival_time, None, vnf.r_rate, vnf.running_time, vnf.deadline, vnf.priority, vnf.waiting_time, vnf.starting_time, vnf.completion_time, vnf.execution_time, vnf.flow_time, vnf.in_node)
-                            if int(serv.running_time) > 0:
-                                self.delete_job(vnf.name)
+                            elif this_pod.event == "task":
+                                task = self.all_tasks.getTask(lambda x: x.id_ == this_pod.id)
+                                task.completion_time = datetime.now()
+                                if task.completion_time > task.deadline:
+                                    self.deadline_violations += 1
+                                task.execution_time = abs((task.completion_time - task.starting_time).seconds)
+                                task.flow_time = abs((task.completion_time - task.task_arrival_time).seconds)
+                                task_index = self.all_tasks.getIndexTask(lambda x: x.id_ == task.id_)
+                                self.all_tasks.items[task_index] = task
+                                self.update_events_file(this_pod.event, task.name, task.id_, None, None, None, task.task_arrival_time, task.r_rate, task.running_time, task.deadline, task.priority, task.waiting_time, task.starting_time, task.completion_time, task.execution_time, task.flow_time, task.in_node)
+                                self.delete_job(task.name)
+                                self.all_pods.items.remove(this_pod)
+                                print('Pod %s deleted' % this_pod.metadata.name)
+
                             else:
-                                self.delete_deployment(vnf.name)
-                            self.all_pods.items.remove(this_pod)
-                            print('Pod %s deleted' % this_pod.metadata.name)
-
-                        elif this_pod.event == "task":
-                            task = self.all_tasks.getTask(lambda x: x.id_ == this_pod.id)
-                            task.completion_time = datetime.now()
-                            if task.completion_time > task.deadline:
-                                self.deadline_violations += 1
-                            task.execution_time = abs((task.completion_time - task.starting_time).seconds)
-                            task.flow_time = abs((task.completion_time - task.task_arrival_time).seconds)
-                            task_index = self.all_tasks.getIndexTask(lambda x: x.id_ == task.id_)
-                            self.all_tasks.items[task_index] = task
-                            self.update_events_file(this_pod.event, task.name, task.id_, None, None, None, task.task_arrival_time, task.r_rate, task.running_time, task.deadline, task.priority, task.waiting_time, task.starting_time, task.completion_time, task.execution_time, task.flow_time, task.in_node)
-                            self.delete_job(task.name)
-                            self.all_pods.items.remove(this_pod)
-                            print('Pod %s deleted' % this_pod.metadata.name)
-
+                                print('Error!! Some event must be detected')
+                                continue
                         else:
-                            print('Error!! Some event must be detected')
-                            continue
+                            tmp_owner = None
+                            for owner in this_pod.metadata.owner_references:
+                                tmp_owner = json.loads(owner)
+                                break
+                            print(this_pod.metadata.owner_references)
+                            print(tmp_owner)
+
+                            if tmp_owner['kind'] == "ReplicaSet":
+                                self.delete_deployment(this_pod.metadata.labels['app'])
                             
+                            elif tmp_owner['kind'] == "Job":
+                                self.delete_job(this_pod.metadata.labels['app'])
+                                
+                            else:
+                                print('Error!!! Pod %s cannot be deleted' % this_pod.metadata.name)
+                                continue
         #print('Number of Pods ', len(self.all_pods.items))
         self.status_lock.release()
         self.update_nodes()

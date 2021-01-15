@@ -77,7 +77,7 @@ class Scheduler:
                         
                             if not serv.vnfunctions.isVNFList(lambda x: x.id_ == eventpod['object'].metadata.annotations['vnf_id']):
                                 new_vnf = VNFunction(eventpod['object'].metadata.annotations['vnf_id'], eventpod['object'].metadata.annotations['vnf_name'], eventpod['object'].metadata.annotations['required_service_rate'], eventpod['object'].metadata.annotations['service_id'])
-                                print ('New VNF ADDED', new_vnf.name)
+                                #print ('New VNF ADDED', new_vnf.name)
                                 new_vnf.deadline = parser.parse(serv.deadline)
                                 new_vnf.priority = serv.priority
                                 new_vnf.running_time = serv.running_time
@@ -142,13 +142,13 @@ class Scheduler:
                         self.monitor.status_lock.release()
 
                         if settings.PRIORITY_LIST_CRITERIA == 0: # priority list is sorted by taking into account the service deadline
-                            new_pod.to_dir()
+                            #new_pod.to_dir()
                             prov_list = list(self.priority_list)
                             prov_list.append(new_pod)
                             prov_list.sort(key=lambda x: x.deadline, reverse=False)
                             self.priority_list = prov_list.copy()
                         elif settings.PRIORITY_LIST_CRITERIA == 1: # priority list is sorted by taking into account the service priority
-                            new_pod.to_dir()
+                            #new_pod.to_dir()
                             prov_list = list(self.priority_list)
                             prov_list.append(new_pod)
                             prov_list.sort(key=lambda x: x.priority, reverse=True)
@@ -165,7 +165,7 @@ class Scheduler:
                             new_pod.rank = rank
                             prov_list = list(self.priority_list)
                             prov_list.append(new_pod)
-                            new_pod.to_dir()
+                            #new_pod.to_dir()
                             prov_list.sort(key=lambda x: x.rank, reverse=False)
                             self.priority_list = prov_list.copy()
                         else:
@@ -235,46 +235,47 @@ class Scheduler:
                         block scheduling thread until newly created Pod is ready
                         """
                         self.monitor.wait_for_pod(obj)
-                        pod = self.monitor.all_pods.getPod(lambda x: x.metadata.name == obj.metadata.name)
-                        pod.spec.node_name = new_node.metadata.name
-                        index_pod = self.monitor.all_pods.getIndexPod(lambda x: x.metadata.name == pod.metadata.name)
-                        self.monitor.all_pods.items[index_pod] = pod
-                        if obj.event == "service":
-                            serv = self.monitor.all_services.getService(lambda x: x.id_ == obj.service_id)
-                            vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == obj.id)
-                            vnf.starting_time = datetime.now()
-                            vnf.waiting_time = abs((vnf.starting_time - obj.service_arrival_time).seconds)
-                            vnf.in_node = new_node.metadata.name
-                            self.monitor.scheduled_VNFs += 1
-                            if vnf.id_ == serv.vnfunctions.items[0].id_:
-                                serv.waiting_time_first_VNF = vnf.waiting_time
-                            vnf_index = serv.vnfunctions.getIndexVNF(lambda x: x.id_ == vnf.id_)
-                            serv.vnfunctions.items[vnf_index] = vnf
-                            all_VNF_scheduled = serv.vnfunctions.areAllVNFScheduled(lambda x: x.in_node != None)
-                            if all_VNF_scheduled:
-                                self.monitor.scheduled_services += 1
-                            index_serv = self.monitor.all_services.getIndexService(lambda x: x.id_ == serv.id_)
-                            self.monitor.all_services.items[index_serv] = serv
-                            # self.monitor.update_nodes()
-                            # self.monitor.update_usage_file()
-                            self.update_result_files()
-                            self.monitor.update_events_file(obj.event, vnf.name, vnf.id_, serv.id_, serv.name, vnf.service_arrival_time, None, vnf.r_rate, vnf.running_time, vnf.deadline, vnf.priority, vnf.waiting_time, vnf.starting_time, None, None, None, vnf.in_node)
+                        if self.monitor.all_pods.isPodList(lambda x: x.metadata.name == obj.metadata.name):
+                            pod = self.monitor.all_pods.getPod(lambda x: x.metadata.name == obj.metadata.name)
+                            pod.spec.node_name = new_node.metadata.name
+                            index_pod = self.monitor.all_pods.getIndexPod(lambda x: x.metadata.name == pod.metadata.name)
+                            self.monitor.all_pods.items[index_pod] = pod
+                            if obj.event == "service":
+                                serv = self.monitor.all_services.getService(lambda x: x.id_ == obj.service_id)
+                                vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == obj.id)
+                                vnf.starting_time = datetime.now()
+                                vnf.waiting_time = abs((vnf.starting_time - obj.service_arrival_time).seconds)
+                                vnf.in_node = new_node.metadata.name
+                                self.monitor.scheduled_VNFs += 1
+                                if vnf.id_ == serv.vnfunctions.items[0].id_:
+                                    serv.waiting_time_first_VNF = vnf.waiting_time
+                                vnf_index = serv.vnfunctions.getIndexVNF(lambda x: x.id_ == vnf.id_)
+                                serv.vnfunctions.items[vnf_index] = vnf
+                                all_VNF_scheduled = serv.vnfunctions.areAllVNFScheduled(lambda x: x.in_node != None)
+                                if all_VNF_scheduled:
+                                    self.monitor.scheduled_services += 1
+                                index_serv = self.monitor.all_services.getIndexService(lambda x: x.id_ == serv.id_)
+                                self.monitor.all_services.items[index_serv] = serv
+                                # self.monitor.update_nodes()
+                                # self.monitor.update_usage_file()
+                                self.update_result_files()
+                                self.monitor.update_events_file(obj.event, vnf.name, vnf.id_, serv.id_, serv.name, vnf.service_arrival_time, None, vnf.r_rate, vnf.running_time, vnf.deadline, vnf.priority, vnf.waiting_time, vnf.starting_time, None, None, None, vnf.in_node)
 
-                        elif obj.event == "task":
-                            task = self.monitor.all_tasks.getTask(lambda x: x.id_ == obj.id)
-                            task.starting_time = datetime.now()
-                            task.waiting_time = abs((task.starting_time - obj.task_arrival_time).seconds)
-                            task.in_node = new_node.metadata.name
-                            self.monitor.scheduled_tasks += 1
-                            task_index = self.monitor.all_tasks.getIndexTask(lambda x: x.id_ == task.id_)
-                            self.monitor.all_tasks.items[task_index] = task
-                            # self.monitor.update_nodes()
-                            # self.monitor.update_usage_file()
-                            self.update_result_files()
-                            self.monitor.update_events_file(obj.event, task.name, task.id_, None, None, None, task.task_arrival_time, task.r_rate, task.running_time, task.deadline, task.priority, task.waiting_time, task.starting_time, None, None, None, task.in_node)
+                            elif obj.event == "task":
+                                task = self.monitor.all_tasks.getTask(lambda x: x.id_ == obj.id)
+                                task.starting_time = datetime.now()
+                                task.waiting_time = abs((task.starting_time - obj.task_arrival_time).seconds)
+                                task.in_node = new_node.metadata.name
+                                self.monitor.scheduled_tasks += 1
+                                task_index = self.monitor.all_tasks.getIndexTask(lambda x: x.id_ == task.id_)
+                                self.monitor.all_tasks.items[task_index] = task
+                                # self.monitor.update_nodes()
+                                # self.monitor.update_usage_file()
+                                self.update_result_files()
+                                self.monitor.update_events_file(obj.event, task.name, task.id_, None, None, None, task.task_arrival_time, task.r_rate, task.running_time, task.deadline, task.priority, task.waiting_time, task.starting_time, None, None, None, task.in_node)
 
-                        else:
-                            print('Event could not be updated')
+                            else:
+                                print('Event could not be updated')
                         #self.monitor.update_pods()
 
                     else:
@@ -300,7 +301,7 @@ class Scheduler:
         selected_node = self.score_nodes(pod, possible_nodes)
 
         if selected_node is None:
-            print('No node was being selected')
+            print('No node was selected')
             
         return selected_node
 
@@ -329,48 +330,74 @@ class Scheduler:
                 elif pod.scheduling_criteria == 3 and int(pod.demanded_processing) < node.proc_capacity and node.spec.unschedulable is not True:
                     return_node_list.items.append(node)
                 else: 
-                    print('None node can meet the pod requirements')
-                    if pod.event == "service":
+                    continue
+
+            if len(return_node_list.items) == 0 or (len(return_node_list.items) == 1 and return_node_list.isNodeList(lambda x: x.metadata.name == "kind-control-plane")):
+                print('None node can meet the %s pod requirements' % pod.metadata.name)
+                if pod.event == "service":
+                    if self.monitor.all_services.isServiceList(lambda x: x.id_ == pod.service_id):
                         serv = self.monitor.all_services.getService(lambda x: x.id_ == pod.service_id)
                         numberVNFs = len(serv.vnfunctions.items)
-                        for i in serv.vnfunctions.items[:]:
-                            self.monitor.delete_deployment(i.name)
+                        for i in serv.vnfunctions.items:
+                            if int(serv.running_time) > 0:
+                                self.monitor.delete_job(i.name)
+                            else:
+                                self.monitor.delete_deployment(i.name)
 
                         self.monitor.status_lock.acquire(blocking=True)
 
                         self.monitor.all_services.items.remove(serv)
-                        for i in self.monitor.all_pods.items[:]:
+                        for i in self.monitor.all_pods.items:
                             if i.service_id == serv.id_:
                                 self.monitor.all_pods.items.remove(i)
                                 print('Pod %s deleted' % i.metadata.name)
 
+                        provi_list = list(self.priority_list)
+                        for i in provi_list:
+                            if i.service_id == serv.id_:
+                                provi_list.remove(i)
+                        self.priority_list = provi_list.copy()
+
                         self.monitor.status_lock.release()
 
                         # self.monitor.update_nodes()
                         # self.monitor.update_usage_file()
+
+                        vnf_serv_scheduled = 0
+                        for i in serv.vnfunctions.items:
+                            if i.in_node is not None:
+                                vnf_serv_scheduled += 1
 
                         self.monitor.rejected_services += 1
-                        self.monitor.rejected_VNFs += numberVNFs
+                        self.monitor.rejected_VNFs += numberVNFs - vnf_serv_scheduled
 
-                    elif pod.event == "task":
-                        task = self.monitor.all_tasks.getTask(lambda x: x.id_ == pod.id)
-                        self.monitor.delete_job(task.name)
+                        self.update_result_files()
 
-                        self.monitor.status_lock.acquire(blocking=True)
+                elif pod.event == "task":
+                    task = self.monitor.all_tasks.getTask(lambda x: x.id_ == pod.id)
+                    self.monitor.delete_job(task.name)
 
-                        self.monitor.all_tasks.items.remove(task)
-                        self.monitor.all_pods.items.remove(pod)
-                        print('Pod %s deleted' % pod.metadata.name)
+                    self.monitor.status_lock.acquire(blocking=True)
 
-                        self.monitor.status_lock.release()
+                    self.monitor.all_tasks.items.remove(task)
+                    self.monitor.all_pods.items.remove(pod)
+                    print('Pod %s deleted' % pod.metadata.name)
 
-                        # self.monitor.update_nodes()
-                        # self.monitor.update_usage_file()
+                    self.monitor.status_lock.release()
 
-                        self.monitor.rejected_tasks += 1
-                    else:
-                        print('Error! Some event must be detected')
-                        break
+                    # self.monitor.update_nodes()
+                    # self.monitor.update_usage_file()
+
+                    self.monitor.rejected_tasks += 1
+
+                    self.update_result_files()
+                else:
+                    print('Error! Some event must be detected')
+
+            if len(return_node_list.items) > 1:
+                if return_node_list.isNodeList(lambda x: x.metadata.name == "kind-control-plane"):
+                    tmp_node = return_node_list.getNode(lambda x: x.metadata.name == "kind-control-plane")
+                    return_node_list.items.remove(tmp_node)
 
         return return_node_list
 
@@ -416,9 +443,10 @@ class Scheduler:
                 else:
                     print('None running scoring process was selected')
                     pass
-
-        print('Selected node:')
-        print(best_node.metadata.name, best_node.usage)
+        
+        if best_node is not None:
+            print('Selected node:')
+            print(best_node.metadata.name, best_node.usage)
         return best_node
 
     def calculate_score(self, pod):
