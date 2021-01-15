@@ -20,8 +20,9 @@ deadline_service = ''
 running_service_time = ''
 service_priority = ''
 service_rate = ''
-_lambda = 5  # Execution events rate events/min
-_number_events = 25
+_lambda = 30  # Execution events rate events/min
+_number_events = 0
+_loop_time = 5
 _inter_event_times = []
 _event_numbers = []
 _event_times = []
@@ -35,8 +36,15 @@ def get_random_string(length):
 
 print('EVENT_NUM,INTER_EVENT_T,EVENT_T')
 
-for i in range(_number_events):
-    _event_numbers.append(i)
+timeout = time.time() + 60 * _loop_time  # run the while loop during _loop_time minutes
+
+while True:
+#for i in range(_number_events):
+    if time.time() > timeout:
+        break
+    _number_events += 1
+    #_event_numbers.append(i)
+    _event_numbers.append(_number_events)
     n = random.random()
 
     _inter_event_time = -math.log(1.0 - n) / _lambda   # inverse of CDF(Cumulative Probability Distribution) to get the actual time between consecutive events in the Poisson process
@@ -45,7 +53,8 @@ for i in range(_number_events):
     _event_time = _event_time + _inter_event_time
     _event_times.append(_event_time)
 
-    print(str(i) +',' + str(_inter_event_time) + ',' + str(_event_time))
+    #print(str(i) +',' + str(_inter_event_time) + ',' + str(_event_time))
+    print(str(_number_events) +',' + str(_inter_event_time) + ',' + str(_event_time))
 
     generate_event = random.randint(0, 2)  # 0 generate a task, 1 generate a persistent service and 2 generate a service during some time
 
