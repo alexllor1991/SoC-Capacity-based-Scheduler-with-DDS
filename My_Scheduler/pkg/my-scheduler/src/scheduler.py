@@ -60,6 +60,9 @@ class Scheduler:
 
         self.init_files()
 
+        p3 = Thread(target=self.monitor.monitor_SoC_nodes)
+        p3.start()
+        
         while True:
             try:
                 for eventpod in self.watcherpod.stream(self.v1.list_pod_for_all_namespaces):    

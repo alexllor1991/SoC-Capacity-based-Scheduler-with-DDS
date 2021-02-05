@@ -19,7 +19,7 @@ MIN_PROCESS_CAPACITY = 500  #value in MIPS (Million of Instruction per Second) t
 
 MAX_PROCESS_CAPACITY = 3000  #value in MIPS (Million of Instruction per Second) taken from paper Q-learning based dynamic task scheduling for energy-efficient cloud computing
 
-PRIORITY_LIST_CRITERIA = 0  # if 0 the priority list is sorted by taking into account the service deadline. 
+PRIORITY_LIST_CRITERIA = 1  # if 0 the priority list is sorted by taking into account the service deadline. 
                             # if 1 the priority list is sorted by taking into account the service priority.
                             # if 2 the priority list is sorted dynamically by taking into account an equation 
 

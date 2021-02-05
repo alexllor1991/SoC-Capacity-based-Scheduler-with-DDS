@@ -56,6 +56,7 @@ class Node(object):
         self.spec = spec_
         self.status = status_
         self.proc_capacity = 0
+        self.SoC = ''
 
     def update_node(self, pod_list):
         """

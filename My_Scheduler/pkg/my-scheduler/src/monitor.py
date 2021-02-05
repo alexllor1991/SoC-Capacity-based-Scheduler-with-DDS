@@ -6,6 +6,8 @@ import logging
 from time import sleep
 from datetime import datetime
 from threading import Thread, Lock
+import multiprocessing
+import socket
 
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
@@ -46,6 +48,8 @@ class ClusterMonitor:
         self.all_tasks = TaskList()
         self.pods_not_to_garbage = []
 
+        self.client_data = multiprocessing.Manager().dict()
+
         self.requested_services = 0
         self.scheduled_services = 0
         self.requested_VNFs = 0
@@ -61,7 +65,8 @@ class ClusterMonitor:
                                       'Node',
                                       'CPU',
                                       'Memory',
-                                      'Proc_Capacity']
+                                      'Proc_Capacity',
+                                      'SoC']
 
         self.fieldnames_events = ['Timestamp',
                                   'Event',
@@ -93,6 +98,22 @@ class ClusterMonitor:
         for node in self.all_nodes.items:
             print(node.metadata.name, node.usage)
 
+    #function to receive SoC from a connected device
+    def startReceivingSoC(self, connector, address):
+
+        while True:
+
+            SoC_str = connector.recv(1024).decode()
+
+            if SoC_str != '':
+
+                self.client_data[address] = {
+                    "SoC": SoC_str,
+                    "connector": connector
+                }
+
+            time.sleep(5)
+
     def update_nodes(self):
         """
         Makes request to API about Nodes in cluster,
@@ -112,9 +133,27 @@ class ClusterMonitor:
                 for node_ in self.v1.list_node().items:
                     node = Node(node_.metadata, node_.spec, node_.status)
                     node.update_node(self.all_pods)
+                    if len(self.client_data) > 0:
+                        ip_s = ''
+                        if str(node.metadata.name).endswith('control-plane'):
+                            ip_s = str(node.spec.to_dict()['pod_cidr'][:-4]) + "1"
+                        else:
+                            ip_s = node.status.addresses[0].to_dict()['address']
+                        if ip_s in self.client_data:
+                            current_SoC = self.client_data[ip_s]['SoC']
+                            node.SoC = current_SoC
                     self.all_nodes.items.append(node)
             for node_ in self.all_nodes.items:
                 node_.update_node(self.all_pods)
+                if len(self.client_data) > 0:
+                    ip_s = ''
+                    if str(node_.metadata.name).endswith('control-plane'):
+                        ip_s = str(node_.spec.to_dict()['pod_cidr'][:-4]) + "1"
+                    else:
+                        ip_s = node_.status.addresses[0].to_dict()['address']
+                    if ip_s in self.client_data:
+                        current_SoC = self.client_data[ip_s]['SoC']
+                        node_.SoC = current_SoC
                 if node_.usage['cpu'] >= self.max_cpu_per_node and node_.spec.unschedulable is not True:
                     node_.spec.unschedulable = True
                 if node_.usage['cpu'] < self.max_cpu_per_node and node_.spec.unschedulable is True:
@@ -136,6 +175,34 @@ class ClusterMonitor:
         while True:
             self.update_pods()
             time.sleep(self.time_interval)
+
+    def monitor_SoC_nodes(self):
+        """
+        Monitor Nodes State of Charge (%)
+        :return:
+        """
+        master_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        master_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+        print("Socket created successfully")
+
+        master_server.bind(('', 8080))
+
+        #listening requests
+        master_server.listen(10)
+        print("Server started...\n")
+
+        #making connections
+        print("Starting to make connections...\n")
+
+        while True:
+            master_worker_connector, addr = master_server.accept()
+            device_address = str(addr[0]) # + ":" + str(addr[1])
+
+            print(device_address + " got connected successfully")
+
+            current_thread = Thread(target=self.startReceivingSoC, daemon=False, args=(master_worker_connector, device_address, ))
+            current_thread.start()
 
     def wait_for_pod(self, new_pod):
         """
@@ -321,7 +388,7 @@ class ClusterMonitor:
                         else:
                             tmp_owner = None
                             for owner in this_pod.metadata.owner_references:
-                                tmp_owner = json.loads(owner)
+                                tmp_owner = json.loads(owner.to_str())
                                 break
                             print(this_pod.metadata.owner_references)
                             print(tmp_owner)
@@ -353,13 +420,6 @@ class ClusterMonitor:
             if not pod.is_alive:
                 self.all_pods.items.remove(pod)
         self.status_lock.release()
-
-    def monitor_nodes(self):
-        """
-        Monitor Nodes usage
-        :return:
-        """
-        pass
 
     def delete_deployment(self, deployment_name):
         try:
@@ -409,5 +469,6 @@ class ClusterMonitor:
                                   'Node': str(node.metadata.name),
                                   'CPU': str(node.usage['cpu']),
                                   'Memory': str(node.usage['memory']), 
-                                  'Proc_Capacity': str(node.proc_capacity)})
+                                  'Proc_Capacity': str(node.proc_capacity),
+                                  'SoC': str(node.SoC)})
         
