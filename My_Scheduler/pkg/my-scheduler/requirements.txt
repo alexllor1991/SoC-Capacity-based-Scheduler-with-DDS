@@ -1,1 +1,6 @@
 kubernetes==10.0.0
+psutil
+statsmodels
+sklearn
+numpy
+pandas
