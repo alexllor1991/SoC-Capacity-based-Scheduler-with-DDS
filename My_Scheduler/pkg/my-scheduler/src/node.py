@@ -12,6 +12,9 @@ class NodeList(object):
         self.items = []
 
     def isNodeList(self, filter):
+        '''
+        Verify is node is present in the node list
+        '''
         found = False
         if len(self.items) > 0:
             for i in self.items:
@@ -25,11 +28,17 @@ class NodeList(object):
             return False
 
     def getNode(self, filter):
+        '''
+        Return the node object if it is present in the node list
+        '''
         for i in self.items:
             if filter(i):
                 return i
 
     def getIndexNode(self, filter):
+        '''
+        Return the index of the node object present in the node list
+        '''
         for i,x in enumerate(self.items):
             if filter(x):
                 return i
@@ -57,6 +66,10 @@ class Node(object):
         self.status = status_
         self.proc_capacity = 0
         self.SoC = ''
+        self.SoC_pred = ''
+        self.net_in_pkt = 0.0
+        self.net_out_pkt = 0.0
+        self.score = 0.0
 
     def update_node(self, pod_list):
         """
@@ -77,7 +90,6 @@ class Node(object):
         Pods running on this node
         :return:
         """
-        # print("Updating " + self.metadata.name + " usage")
         memory = 0.0
         cpu = 0.0
         for pod in self.pods.items:
@@ -86,11 +98,8 @@ class Node(object):
                 use = pod.get_usage()
                 memory += float(use['memory'])
                 cpu += float(use['cpu'])
-        # print("Total usage in node " + self.metadata.name)
-        # print("CPU: " + str(cpu))
-        # print("Memory: " + str(memory))
 
-        return {'cpu': cpu, 'memory': memory, 'proc_capacity': self.proc_capacity}
+        return {'cpu': round(cpu, 4), 'memory': round(memory, 4), 'proc_capacity': self.proc_capacity}
 
     def get_pods_on_node(self, pod_list):
         """

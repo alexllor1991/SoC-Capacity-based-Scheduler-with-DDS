@@ -12,6 +12,9 @@ class ServiceList(object):
         self.items = []
 
     def isServiceList(self, filter):
+        '''
+        Verify is service is present in the service list
+        '''
         found = False
         if len(self.items) > 0:
             for i in self.items:
@@ -25,11 +28,17 @@ class ServiceList(object):
             return False
 
     def getService(self, filter):
+        '''
+        Return the service object if it is present in the service list
+        '''
         for i in self.items:
             if filter(i):
                 return i
 
     def getIndexService(self, filter):
+        '''
+        Return the index of the service object present in the service list
+        '''
         for i,x in enumerate(self.items):
             if filter(x):
                 return i
@@ -39,6 +48,9 @@ class VNFList(object):
         self.items = []
 
     def isVNFList(self, filter):
+        '''
+        Verify is vnf is present in the service list
+        '''
         found = False
         if len(self.items) > 0:
             for i in self.items:
@@ -52,23 +64,30 @@ class VNFList(object):
             return False
 
     def getVNF(self, filter):
+        '''
+        Return the vnf object if it is present in the vnf list
+        '''
         for i in self.items:
             if filter(i):
                 return i
 
     def getIndexVNF(self, filter):
+        '''
+        Return the index of the vnf object present in the vnf list
+        '''
         for i,x in enumerate(self.items):
             if filter(x):
                 return i
 
     def areAllVNFScheduled(self, filter):
+        '''
+        Verify if all the constituent vnfs of a service have been scheduled
+        '''
         count = 0
         for i in self.items:
             if filter(i):
                 count += 1
-                #print('Scheduled VNF ' + str(count) + 'of ' + str(len(self.items)))
         if count == len(self.items):
-            #print('All VNFs have been scheduled')
             return True
         else:
             return False
@@ -78,6 +97,9 @@ class TaskList(object):
         self.items = []
 
     def isTaskList(self, filter):
+        '''
+        Verify is vnf is present in the service list
+        '''
         found = False
         if len(self.items) > 0:
             for i in self.items:
@@ -91,11 +113,17 @@ class TaskList(object):
             return False
 
     def getTask(self, filter):
+        '''
+        Return the task object if it is present in the task list
+        '''
         for i in self.items:
             if filter(i):
                 return i
 
     def getIndexTask(self, filter):
+        '''
+        Return the index of the task object present in the task list
+        '''
         for i,x in enumerate(self.items):
             if filter(x):
                 return i
@@ -157,7 +185,7 @@ class VNFunction(object):
         self.priority = None
         self.starting_time = None  # starting time of the VNF processing in node (datetime)
         self.completion_time = None # completion time of the VNF processing in node (datetime)
-        self.waiting_time = None  # waiting time of the VNF to be processed (arrival_time_first_VNF - current_time)  (float)
+        self.waiting_time = None  # waiting time of the VNF to be processed (starting_time - arrival_time_first_VNF)  (float)
         self.in_node = None  # node where the function is mapped
         self.flow_time = None  # total time of the VNF in the system (completion_time - service_arrival_time) (float)
         self.execution_time = None #  execution time of the VNF (completion_time - starting_time) (float)
@@ -203,7 +231,7 @@ class Task(object):
         self.task_arrival_time = None  # arrival time of the task (datetime)
         self.starting_time = None  # starting time of the task processing in node (datetime)
         self.completion_time = None # completion time of the task processing (datetime)
-        self.waiting_time = None  # waiting time of the task to be processed (arrival_time - current_time)  (float)
+        self.waiting_time = None  # waiting time of the task to be processed (starting_time - arrival_time)  (float)
         self.in_node = None  # node where the task is mapped
         self.execution_time = None # execution time of the task (completion_time - starting_time) (float)
         self.flow_time = None  # total time of the task in the system (completion_time - task_arrival_time) (float)

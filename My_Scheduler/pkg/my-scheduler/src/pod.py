@@ -32,6 +32,9 @@ class PodList(object):
         self.items = []
 
     def isPodList(self, filter):
+        '''
+        Verify is pod is present in the pod list
+        '''
         found = False
         if len(self.items) > 0:
             for i in self.items:
@@ -45,11 +48,17 @@ class PodList(object):
             return False
 
     def getPod(self, filter):
+        '''
+        Return the pod object if it is present in the pod list
+        '''
         for i in self.items:
             if filter(i):
                 return i
 
     def getIndexPod(self, filter):
+        '''
+        Return the index of the pod object in the pod list
+        '''
         for i,x in enumerate(self.items):
             if filter(x):
                 return i
@@ -124,7 +133,6 @@ class Pod(object):
         except Exception as e:
             if len(self.usage) <= 1:
                 self.usage = []
-            # self.usage.append({'cpu': 0, 'memory': 0})
             return int(str(e)[1:4])
 
         # Pod usage is sum of usage of all containers running inside it
@@ -151,8 +159,6 @@ class Pod(object):
                         break
 
                 if found:
-                    # there can be only one param specified in requests
-
                     if 'cpu' in tmp_cont.resources.requests:
                         tmp_cpu += float(self.parse_usage_data(tmp_cont.resources.requests['cpu'], DataType.CPU))
                     else:
@@ -225,12 +231,6 @@ class Pod(object):
             if data_string[-1].isalpha():
                 wage = cpu_type_wage[data_string[-1]] / BASE_CPU_WAGE
                 value = int(data_string[:-1])
-                # for char in data_string[:-1]:
-                #     print(char)
-                #     if char.isalpha():
-                #         return None
-                # print(data_string[:-1])
-                #return int(data_string[:-1])
                 return float(wage * value)
             else:
                 return None
@@ -246,14 +246,8 @@ class Pod(object):
             for entry in self.usage:
                 sum_cpu += float(entry['cpu'])
                 sum_mem += float(entry['memory'])
-            # print("Pod " + self.metadata.name)
-            # print("SumCPU: " + str(sum_cpu))
-            # print("SumMem: " + str(sum_mem))
-            # print(len(self.usage))
             avg_cpu = sum_cpu / len(self.usage)
             avg_mem = sum_mem / len(self.usage)
-            # print(avg_cpu)
-            # print(avg_mem)
             return {'cpu': avg_cpu, 'memory': avg_mem}
         else:
             return {'cpu': 0, 'memory': 0}

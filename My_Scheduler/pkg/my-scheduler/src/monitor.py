@@ -4,10 +4,12 @@ import os
 import csv
 import logging
 from time import sleep
-from datetime import datetime
+from datetime import datetime, timedelta
 from threading import Thread, Lock
 import multiprocessing
 import socket
+import psutil
+import pandas as pd
 
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
@@ -22,6 +24,8 @@ NUMBER_OF_RETRIES = 7
 
 logging.basicConfig(filename=settings.LOG_FILE, level=logging.INFO, datefmt='%Y-%m-%d %H:%M:%S',
                     format='%(asctime)s:%(levelname)s:%(message)s')
+
+pd.options.mode.chained_assignment = None
 
 class ClusterMonitor:
     """
@@ -43,6 +47,7 @@ class ClusterMonitor:
         self.apps_v1 = client.AppsV1Api(client.ApiClient(configuration))
 
         self.all_pods = PodList()
+        self.scheduled_running_pods = PodList()
         self.all_nodes = NodeList()
         self.all_services = ServiceList()
         self.all_tasks = TaskList()
@@ -60,13 +65,24 @@ class ClusterMonitor:
         self.rejected_VNFs = 0
         self.rejected_tasks = 0
         self.deadline_violations = 0
+        self.failed_tasks = 0
+        self.failed_vnfs = 0
 
         self.fieldnames_usage_node = ['Timestamp',
                                       'Node',
                                       'CPU',
                                       'Memory',
                                       'Proc_Capacity',
+                                      'Net_In_Pkt',
                                       'SoC']
+
+        self.fieldnames_predictions = ['Timestamp',
+                                      'Node',
+                                      'CPU',
+                                      'Net_In_Pkt',
+                                      'SoC_real',
+                                      'SoC_pred',
+                                      'SoC_pred_upd']
 
         self.fieldnames_events = ['Timestamp',
                                   'Event',
@@ -87,6 +103,8 @@ class ClusterMonitor:
                                   'Flow_time',
                                   'Assigned_node']
 
+        self.dataset_train = pd.DataFrame(columns=self.fieldnames_predictions)
+
         self.max_cpu_per_node = settings.TOTAL_CPU_CLUSTER / settings.NUMBER_NODES_CLUSTER
         self.max_mem_per_node = settings.TOTAL_MEMORY_CLUSTER / settings.NUMBER_NODES_CLUSTER
 
@@ -100,7 +118,9 @@ class ClusterMonitor:
 
     #function to receive SoC from a connected device
     def startReceivingSoC(self, connector, address):
-
+        '''
+        Receives the SOC information from each agent running in the nodes
+        '''
         while True:
 
             SoC_str = connector.recv(1024).decode()
@@ -108,7 +128,7 @@ class ClusterMonitor:
             if SoC_str != '':
 
                 self.client_data[address] = {
-                    "SoC": SoC_str,
+                    "SoC": str(SoC_str)[:6],
                     "connector": connector
                 }
 
@@ -132,16 +152,19 @@ class ClusterMonitor:
             if len(self.v1.list_node().items) != len(self.all_nodes.items):
                 for node_ in self.v1.list_node().items:
                     node = Node(node_.metadata, node_.spec, node_.status)
+                    if str(node_.metadata.name).endswith('control-plane') and settings.DEPLOY_IN_MASTER is not True:
+                        node.spec.unschedulable = True
+                        print ("Node: " + node_.metadata.name + "--> Unschedulable")
                     node.update_node(self.all_pods)
                     if len(self.client_data) > 0:
                         ip_s = ''
                         if str(node.metadata.name).endswith('control-plane'):
                             ip_s = str(node.spec.to_dict()['pod_cidr'][:-4]) + "1"
                         else:
-                            ip_s = node.status.addresses[0].to_dict()['address']
+                            ip_s = str(node.spec.to_dict()['pod_cidr'][:-3])
                         if ip_s in self.client_data:
                             current_SoC = self.client_data[ip_s]['SoC']
-                            node.SoC = current_SoC
+                            node.SoC = str(current_SoC)[:6]
                     self.all_nodes.items.append(node)
             for node_ in self.all_nodes.items:
                 node_.update_node(self.all_pods)
@@ -150,14 +173,31 @@ class ClusterMonitor:
                     if str(node_.metadata.name).endswith('control-plane'):
                         ip_s = str(node_.spec.to_dict()['pod_cidr'][:-4]) + "1"
                     else:
-                        ip_s = node_.status.addresses[0].to_dict()['address']
+                        ip_s = str(node_.spec.to_dict()['pod_cidr'][:-3])
                     if ip_s in self.client_data:
                         current_SoC = self.client_data[ip_s]['SoC']
-                        node_.SoC = current_SoC
-                if node_.usage['cpu'] >= self.max_cpu_per_node and node_.spec.unschedulable is not True:
+                        node_.SoC = str(current_SoC)[:6]
+                if node_.usage['cpu'] >= self.max_cpu_per_node - 300 and node_.spec.unschedulable is not True:
                     node_.spec.unschedulable = True
-                if node_.usage['cpu'] < self.max_cpu_per_node and node_.spec.unschedulable is True:
-                    node_.spec.unschedulable = False
+                    print ("Node: " + node_.metadata.name + "--> Unschedulable")
+                    body = {
+                        "spec": {
+                            "unschedulable": True
+                        }
+                    }
+                    self.v1.patch_node(node_.metadata.name, body)
+                if node_.usage['cpu'] < self.max_cpu_per_node - 300 and node_.spec.unschedulable is True:
+                    if str(node_.metadata.name).endswith('control-plane') and settings.DEPLOY_IN_MASTER is not True:
+                        node_.spec.unschedulable = True
+                    else:
+                        node_.spec.unschedulable = False
+                    print ("Node: " + node_.metadata.name + "--> Schedulable")
+                    body = {
+                        "spec": {
+                            "unschedulable": False
+                        }
+                    }
+                    self.v1.patch_node(node_.metadata.name, body)
                 index = self.all_nodes.getIndexNode(lambda x: x.metadata.name == node_.metadata.name)
                 self.all_nodes.items[index] = node_
             self.status_lock.release()
@@ -197,7 +237,7 @@ class ClusterMonitor:
 
         while True:
             master_worker_connector, addr = master_server.accept()
-            device_address = str(addr[0]) # + ":" + str(addr[1])
+            device_address = str(addr[0]) 
 
             print(device_address + " got connected successfully")
 
@@ -230,15 +270,9 @@ class ClusterMonitor:
                 #print('Waiting for pod %s' % new_pod.metadata.name)
                 val = new_pod.fetch_usage()
 
-                # do not add anything
-                #new_pod.usage = []
-
                 if val == 0:
-                    #print('Pod %s ready...' % new_pod.metadata.name)
-                    #print(new_pod.usage)
                     break
                 else:
-                    #print('Pod %s not ready...' % new_pod.metadata.name)
 
                     retries_not_ready += 1
 
@@ -264,11 +298,10 @@ class ClusterMonitor:
                             new_pod.usage.pop(0)
                         
                         new_pod.usage.append({'cpu': tmp_cpu, 'memory': tmp_mem})
-                        #print(new_pod.usage)
+
                         break
 
             else:
-                #print('Pod %s not found' % new_pod.metadata.name)
 
                 retries += 1
 
@@ -296,6 +329,9 @@ class ClusterMonitor:
             if pod_.status.phase == 'Running':
                 for pod in self.all_pods.items:
                     if pod_.metadata.name == pod.metadata.name:
+                        pod.status = pod_.status
+                        index_pod = self.all_pods.getIndexPod(lambda x: x.metadata.name == pod.metadata.name)
+                        self.all_pods.items[index_pod] = pod
                         # found in collection, so update its usage
                         skip = True  # skip creating new Pod
                         pod.is_alive = True
@@ -324,17 +360,10 @@ class ClusterMonitor:
                                 pod.usage.pop(0)
                         
                             pod.usage.append({'cpu': tmp_cpu, 'memory': tmp_mem})
-                        #     if res == 404:
-                        #         print('Metrics for pod %s not found ' % pod.metadata.name)
-                        #     else:
-                        #         print('Unknown metrics server error %s' % res)
-                        #     break
-
-                        #print('Updated metrics for pod %s' % pod.metadata.name)
 
                         break
 
-                if not skip:
+                if not skip and pod_.metadata.namespace != 'default':
                     # this is new pod, add it to
                     pod = Pod(pod_.metadata, pod_.spec, pod_.status)
                     pod.is_alive = True
@@ -344,20 +373,41 @@ class ClusterMonitor:
             if pod_.status.phase == 'Succeeded':
                 for pod in self.all_pods.items:
                     if pod_.metadata.name == pod.metadata.name:
+                        pod.status = pod_.status
+                        index_pod = self.all_pods.getIndexPod(lambda x: x.metadata.name == pod.metadata.name)
+                        self.all_pods.items[index_pod] = pod
                         this_pod = self.all_pods.getPod(lambda x: x.metadata.name == pod.metadata.name)
                         if this_pod.event is not None:
                             if this_pod.event == "service":
+                                flag_incomplete = False
                                 serv = self.all_services.getService(lambda x: x.id_ == this_pod.service_id)
                                 vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == this_pod.id)
                                 vnf.completion_time = datetime.now()
                                 if vnf.completion_time > vnf.deadline:
                                     self.deadline_violations += 1
-                                vnf.execution_time = abs((vnf.completion_time - vnf.starting_time).seconds)
-                                vnf.flow_time = abs((vnf.completion_time - serv.arrival_time).seconds)
+                                if vnf.starting_time is None:
+                                    vnf.starting_time = vnf.completion_time - timedelta(seconds=60)
+                                    vnf.execution_time = abs((vnf.completion_time - vnf.starting_time).seconds)
+                                else:
+                                    vnf.execution_time = abs((vnf.completion_time - vnf.starting_time).seconds)
+                                if serv.arrival_time is None:
+                                    serv.arrival_time = vnf.starting_time - timedelta(seconds=30)
+                                    vnf.flow_time = abs((vnf.completion_time - serv.arrival_time).seconds)
+                                    vnf.waiting_time = abs((vnf.starting_time - serv.arrival_time).seconds)
+                                else:
+                                    vnf.flow_time = abs((vnf.completion_time - serv.arrival_time).seconds)
                                 if vnf.id_ == serv.vnfunctions.items[-1].id_:
                                     serv.makespan = abs((vnf.completion_time - serv.arrival_time).seconds)
+                                if vnf.in_node is None:
+                                    vnf.in_node = pod_.spec.node_name
+                                    flag_incomplete = True
                                 vnf_index = serv.vnfunctions.getIndexVNF(lambda x: x.id_ == vnf.id_)
                                 serv.vnfunctions.items[vnf_index] = vnf
+                                if flag_incomplete:
+                                    self.scheduled_VNFs += 1
+                                    all_VNF_scheduled = serv.vnfunctions.areAllVNFScheduled(lambda x: x.in_node != None)
+                                    if all_VNF_scheduled:
+                                        self.scheduled_services += 1
                                 index_serv = self.all_services.getIndexService(lambda x: x.id_ == serv.id_)
                                 self.all_services.items[index_serv] = serv
                                 self.update_events_file(this_pod.event, vnf.name, vnf.id_, serv.id_, serv.name, vnf.service_arrival_time, None, vnf.r_rate, vnf.running_time, vnf.deadline, vnf.priority, vnf.waiting_time, vnf.starting_time, vnf.completion_time, vnf.execution_time, vnf.flow_time, vnf.in_node)
@@ -366,6 +416,8 @@ class ClusterMonitor:
                                 else:
                                     self.delete_deployment(vnf.name)
                                 self.all_pods.items.remove(this_pod)
+                                if self.scheduled_running_pods.isPodList(lambda x: x.metadata.name == i.metadata.name):
+                                    self.scheduled_running_pods.items.remove(this_pod)
                                 print('Pod %s deleted' % this_pod.metadata.name)
 
                             elif this_pod.event == "task":
@@ -373,24 +425,34 @@ class ClusterMonitor:
                                 task.completion_time = datetime.now()
                                 if task.completion_time > task.deadline:
                                     self.deadline_violations += 1
-                                task.execution_time = abs((task.completion_time - task.starting_time).seconds)
-                                task.flow_time = abs((task.completion_time - task.task_arrival_time).seconds)
+                                if task.starting_time is None:
+                                    task.starting_time = task.completion_time - timedelta(seconds=60)
+                                    task.execution_time = abs((task.completion_time - task.starting_time).seconds)
+                                else:
+                                    task.execution_time = abs((task.completion_time - task.starting_time).seconds)
+                                if task.task_arrival_time is None:
+                                    task.task_arrival_time = task.starting_time - timedelta(seconds=30)
+                                    task.flow_time = abs((task.completion_time - task.task_arrival_time).seconds)
+                                else:
+                                    task.flow_time = abs((task.completion_time - task.task_arrival_time).seconds)
                                 task_index = self.all_tasks.getIndexTask(lambda x: x.id_ == task.id_)
                                 self.all_tasks.items[task_index] = task
                                 self.update_events_file(this_pod.event, task.name, task.id_, None, None, None, task.task_arrival_time, task.r_rate, task.running_time, task.deadline, task.priority, task.waiting_time, task.starting_time, task.completion_time, task.execution_time, task.flow_time, task.in_node)
                                 self.delete_job(task.name)
                                 self.all_pods.items.remove(this_pod)
+                                if self.scheduled_running_pods.isPodList(lambda x: x.metadata.name == i.metadata.name):
+                                    self.scheduled_running_pods.items.remove(this_pod)
                                 print('Pod %s deleted' % this_pod.metadata.name)
 
                             else:
                                 print('Error!! Some event must be detected')
-                                continue
+                            break
+
                         else:
                             tmp_owner = None
                             for owner in this_pod.metadata.owner_references:
-                                tmp_owner = json.loads(owner.to_str())
+                                tmp_owner = owner
                                 break
-                            print(this_pod.metadata.owner_references)
                             print(tmp_owner)
 
                             if tmp_owner['kind'] == "ReplicaSet":
@@ -401,12 +463,156 @@ class ClusterMonitor:
                                 
                             else:
                                 print('Error!!! Pod %s cannot be deleted' % this_pod.metadata.name)
-                                continue
-        #print('Number of Pods ', len(self.all_pods.items))
+                            break
+            
+            condition = None
+            pod_dict = pod_.status.to_dict()
+            if 'conditions' in pod_dict:
+                if pod_.status.conditions is not None:
+                    for c in pod_.status.conditions:
+                        c_s = c.to_dict()
+                        if c_s['type'] == 'PodScheduled':
+                            condition = c_s
+                    if pod_.status.phase == 'Pending' and condition['reason'] == 'Unschedulable':
+                        for pod in self.all_pods.items:
+                            if pod_.metadata.name == pod.metadata.name:
+                                pod.status = pod_.status
+                                index_pod = self.all_pods.getIndexPod(lambda x: x.metadata.name == pod.metadata.name)
+                                self.all_pods.items[index_pod] = pod
+                                this_pod = self.all_pods.getPod(lambda x: x.metadata.name == pod.metadata.name)
+                                if this_pod.event is not None:
+                                    if this_pod.event == "service":
+                                        if self.all_services.isServiceList(lambda x: x.id_ == this_pod.service_id):
+                                            serv = self.all_services.getService(lambda x: x.id_ == this_pod.service_id)
+                                            numberVNFs = len(serv.vnfunctions.items)
+                                            self.all_services.items.remove(serv)
+                                            for i in self.all_pods.items:
+                                                if i.service_id == serv.id_:
+                                                    self.all_pods.items.remove(i)
+                                                    if self.scheduled_running_pods.isPodList(lambda x: x.metadata.name == i.metadata.name):
+                                                        self.scheduled_running_pods.items.remove(i)
+                                                    print('Pod %s deleted' % i.metadata.name)
+                                                    
+                                            vnf_serv_scheduled = 0
+                                            for i in serv.vnfunctions.items:
+                                                if i.in_node is not None:
+                                                    vnf_serv_scheduled += 1
+
+                                            self.rejected_services += 1
+                                            self.rejected_VNFs += numberVNFs - vnf_serv_scheduled
+                                            self.failed_vnfs += 1
+
+                                            for i in serv.vnfunctions.items:
+                                                if int(serv.running_time) > 0:
+                                                    self.delete_job(i.name)
+                                                else:
+                                                    self.delete_deployment(i.name)
+                                    
+                                    elif this_pod.event == "task":
+                                        task = self.all_tasks.getTask(lambda x: x.id_ == this_pod.id)
+
+                                        self.all_tasks.items.remove(task)
+                                        self.all_pods.items.remove(this_pod)
+                                        if self.scheduled_running_pods.isPodList(lambda x: x.metadata.name == this_pod.metadata.name):
+                                            self.scheduled_running_pods.items.remove(this_pod)
+                                        print('Pod %s deleted' % pod.metadata.name)
+                                        self.delete_job(task.name)
+                                        self.rejected_tasks += 1
+                                        self.failed_tasks += 1
+
+                                    else:
+                                        print('Error! Some event must be detected')
+                                    break
+
+                                else:
+                                    tmp_owner = None
+                                    for owner in this_pod.metadata.owner_references:
+                                        tmp_owner = owner
+                                        break
+                                    print(tmp_owner)
+
+                                    if tmp_owner['kind'] == "ReplicaSet":
+                                        self.delete_deployment(this_pod.metadata.labels['app'])
+                                    
+                                    elif tmp_owner['kind'] == "Job":
+                                        self.delete_job(this_pod.metadata.labels['app'])
+                                        
+                                    else:
+                                        print('Error!!! Pod %s cannot be deleted' % this_pod.metadata.name)
+                                    break
+
+            if pod_.status.phase == 'Failed' or pod_.status.phase == 'Unknown' or pod_.status.phase == 'Error':
+                for pod in self.all_pods.items:
+                    if pod_.metadata.name == pod.metadata.name:
+                        pod.status = pod_.status
+                        index_pod = self.all_pods.getIndexPod(lambda x: x.metadata.name == pod.metadata.name)
+                        self.all_pods.items[index_pod] = pod
+                        this_pod = self.all_pods.getPod(lambda x: x.metadata.name == pod.metadata.name)
+                        if this_pod.event is not None:
+                            if this_pod.event == "service":
+                                if self.all_services.isServiceList(lambda x: x.id_ == this_pod.service_id):
+                                    serv = self.all_services.getService(lambda x: x.id_ == this_pod.service_id)
+                                    numberVNFs = len(serv.vnfunctions.items)
+                                    
+                                    self.all_services.items.remove(serv)
+                                    for i in self.all_pods.items:
+                                        if i.service_id == serv.id_:
+                                            self.all_pods.items.remove(i)
+                                            if self.scheduled_running_pods.isPodList(lambda x: x.metadata.name == i.metadata.name):
+                                                self.scheduled_running_pods.items.remove(i)
+                                            print('Pod %s deleted' % i.metadata.name)
+
+                                    vnf_serv_scheduled = 0
+                                    for i in serv.vnfunctions.items:
+                                        if i.in_node is not None:
+                                            vnf_serv_scheduled += 1
+
+                                    self.rejected_services += 1
+                                    self.rejected_VNFs += numberVNFs - vnf_serv_scheduled
+                                    self.failed_vnfs += 1
+
+                                    for i in serv.vnfunctions.items:
+                                        if int(serv.running_time) > 0:
+                                            self.delete_job(i.name)
+                                        else:
+                                            self.delete_deployment(i.name)
+                            
+                            elif this_pod.event == "task":
+                                task = self.all_tasks.getTask(lambda x: x.id_ == this_pod.id)
+
+                                self.all_tasks.items.remove(task)
+                                self.all_pods.items.remove(this_pod)
+                                if self.scheduled_running_pods.isPodList(lambda x: x.metadata.name == this_pod.metadata.name):
+                                    self.scheduled_running_pods.items.remove(this_pod)
+                                print('Pod %s deleted' % pod.metadata.name)
+                                self.delete_job(task.name)
+                                self.rejected_tasks += 1
+                                self.failed_tasks += 1
+
+                            else:
+                                print('Error! Some event must be detected')
+                            break
+
+                        else:
+                            tmp_owner = None
+                            for owner in this_pod.metadata.owner_references:
+                                tmp_owner = owner
+                                break
+                            print(tmp_owner)
+
+                            if tmp_owner['kind'] == "ReplicaSet":
+                                self.delete_deployment(this_pod.metadata.labels['app'])
+                            
+                            elif tmp_owner['kind'] == "Job":
+                                self.delete_job(this_pod.metadata.labels['app'])
+                                
+                            else:
+                                print('Error!!! Pod %s cannot be deleted' % this_pod.metadata.name)
+                            break
+                        
         self.status_lock.release()
         self.update_nodes()
         self.update_usage_file()
-        #self.garbage_old_pods()
 
     def garbage_old_pods(self):
         """
@@ -422,6 +628,9 @@ class ClusterMonitor:
         self.status_lock.release()
 
     def delete_deployment(self, deployment_name):
+        '''
+        Delete deployment object in Kubernetes framework
+        '''
         try:
             api_response = self.apps_v1.delete_namespaced_deployment(name=deployment_name, namespace="default", body=client.V1DeleteOptions(propagation_policy='Foreground', grace_period_seconds=5))
             print(deployment_name + " deleted. status='%s'" % str(api_response.status))
@@ -429,6 +638,9 @@ class ClusterMonitor:
             print("Exception when calling AppsV1Api->delete_namespaced_deployment: %s\n" % e)
 
     def delete_job(self, job_name):
+        '''
+        Delete job object in Kubernetes framework
+        '''
         try:
             api_response = self.batch_v1.delete_namespaced_job(name=job_name, namespace="default", body=client.V1DeleteOptions(propagation_policy='Foreground', grace_period_seconds=5))
             print(job_name + " deleted. status='%s'" % str(api_response.status))
@@ -436,7 +648,9 @@ class ClusterMonitor:
             print("Exception when calling BatchV1Api->delete_namespaced_job: %s\n" % e)
 
     def update_events_file(self, event, name, id, serv_id, serv_name, serv_arrival_time, task_arrival_time, demanded_rate, running_time, deadline, priority, waiting_time, starting_time, completion_time, execution_time, flow_time, assigned_node):
-        
+        '''
+        Saves the events information to Events.csv file
+        '''
         with open('Events.csv', 'a', buffering=1) as csvfile3:
             writer3 = csv.DictWriter(csvfile3, fieldnames=self.fieldnames_events)
             writer3.writerow({'Timestamp': str(datetime.now()),
@@ -459,16 +673,63 @@ class ClusterMonitor:
                               'Assigned_node': str(assigned_node)})
 
     def update_usage_file(self):
-
+        '''
+        Saves the usage node information to Usage.csv file and update the training dataset used for the regression model
+        '''
         for node in self.all_nodes.items:
-            #logging.info(node.metadata.name + ' ' + 'CPU:' + str(node.usage['cpu']) + ' ' + 'Memory:' + str(node.usage['memory']) + ' ' + 'Proc_Capacity:' + str(node.proc_capacity))
 
             with open('Usage.csv', 'a', buffering=1) as csvfile1:
                 writer1 = csv.DictWriter(csvfile1, fieldnames=self.fieldnames_usage_node)
-                writer1.writerow({'Timestamp': str(datetime.now()),
-                                  'Node': str(node.metadata.name),
-                                  'CPU': str(node.usage['cpu']),
-                                  'Memory': str(node.usage['memory']), 
-                                  'Proc_Capacity': str(node.proc_capacity),
-                                  'SoC': str(node.SoC)})
+                if str(node.metadata.name).endswith('control-plane'):
+                    net_in_pkt = self.net_usage_master()
+                    node.net_in_pkt = net_in_pkt
+                    date = str(datetime.now())
+                    writer1.writerow({'Timestamp': date,
+                                    'Node': str(node.metadata.name),
+                                    'CPU': str(node.usage['cpu']),
+                                    'Memory': str(node.usage['memory']), 
+                                    'Proc_Capacity': str(node.proc_capacity),
+                                    'Net_In_Pkt': str(net_in_pkt),
+                                    'SoC': str(node.SoC)})
+                    self.dataset_train = self.dataset_train.append({'Timestamp': date,
+                                                                    'Node': node.metadata.name,
+                                                                    'CPU': node.usage['cpu'],
+                                                                    'Net_In_Pkt': net_in_pkt,
+                                                                    'SoC_real': node.SoC,
+                                                                    'SoC_pred': '0',
+                                                                    'SoC_pred_upd': '0'}, ignore_index=True)
+                else:
+                    date = str(datetime.now())
+                    writer1.writerow({'Timestamp': date,
+                                    'Node': str(node.metadata.name),
+                                    'CPU': str(node.usage['cpu']),
+                                    'Memory': str(node.usage['memory']), 
+                                    'Proc_Capacity': str(node.proc_capacity),
+                                    'Net_In_Pkt': str(0.0),
+                                    'SoC': str(node.SoC)})
+                    self.dataset_train = self.dataset_train.append({'Timestamp': date,
+                                                                    'Node': node.metadata.name,
+                                                                    'CPU': node.usage['cpu'],
+                                                                    'Net_In_Pkt': 0.0,
+                                                                    'SoC_real': node.SoC,
+                                                                    'SoC_pred': '0',
+                                                                    'SoC_pred_upd': '0'}, ignore_index=True)
+
+    def restart_dataset_train(self):
+        '''
+        Reset the training dataset by initializing it again
+        '''
+        self.status_lock.acquire(blocking=True)
+        self.dataset_train = pd.DataFrame(columns=self.fieldnames_predictions)
+        self.status_lock.release()
+        print('Dataset to train was initialized')
+
+    def net_usage_master(self, inf = "eth0"):   #change the inf variable according to the interface
+        '''
+        Get the number of packets going through a determined interface
+        '''
+        net_stat = psutil.net_io_counters(pernic=True, nowrap=True)[inf]
+        net_in = net_stat.bytes_recv
+
+        return round(net_in/1024/1024, 3)
         
