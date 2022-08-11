@@ -1,5 +1,5 @@
-# Dynamic_Scheduler_SoC-Aware
-This project aims to implement a dynamic scheduler to extend the lifecycle of a cluster by taking into account the State of Charge of their devices and meeting service requirements.
+# Dynamic_Scheduler_SoC-Aware with DDS
+This project aims to implement a dynamic scheduler to extend the lifecycle of a cluster by taking into account the State of Charge of their devices and meeting service requirements. Additionally, it incorporate a DDS module to exchange information in a multicluster environmment.
 
 1. Install kind to simulate a kubernetes cluster and kubectl to manage it.
 
