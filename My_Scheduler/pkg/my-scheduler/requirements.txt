@@ -4,3 +4,4 @@ statsmodels
 sklearn
 numpy
 pandas
+rticonnextdds_connector
