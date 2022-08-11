@@ -19,6 +19,8 @@ MIX_METRICS = True
 # refresh interval in seconds
 TIME_INTERVAL = 3
 
+TIME_INTERVAL_MULTIDEPLOYMENTS = 5
+
 # estimation checking time in seconds
 ESTIMATION_CHECKING_TIME = 200
 
@@ -34,7 +36,7 @@ PRIORITY_LIST_CRITERIA = 2  # if 0 the priority list is sorted by taking into ac
                             # if 1 the priority list is sorted by taking into account the service priority.
                             # if 2 the priority list is sorted by taking into account a dynamic rank 
 
-SCHEDULING_CRITERIA = 0  # if 0 the scheduling criteria is a mixed relation between CPU and SOC
+SCHEDULING_CRITERIA = 2  # if 0 the scheduling criteria is a mixed relation between CPU and SOC
                          # if 1 the scheduling criteria takes into account the SOC estimation
                          # if 2 the scheduling criteria takes into account the CPU usage
                          # if 3 the scheduling criteria takes into account the best processing times in the nodes

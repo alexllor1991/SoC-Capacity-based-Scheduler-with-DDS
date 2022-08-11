@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dds xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://community.rti.com/schema/6.1.0/rti_dds_profiles.xsd" version="6.1.0">
+
+<!-- Qos library -->
+<qos_library name="MyQosLibrary">
+  <qos_profile name="Logging" is_default_participant_factory_profile="false">
+    <participant_factory_qos>
+        <logging>
+            <verbosity>WARNING</verbosity>
+        </logging>
+    </participant_factory_qos>
+</qos_profile>
+</qos_library>
+
+<!-- types -->
+<types>
+<const name="MAX_SIZE" type="int32" value="64"/>
+<struct name= "topologia">
+  <member name="Identificador" stringMaxLength="MAX_SIZE" type="string"/>
+  <member name="NodeId" stringMaxLength="MAX_SIZE" type="string"/>
+  <member name="TerminationPointId" stringMaxLength="MAX_SIZE" type="string"/>
+  <member name="LinkId" stringMaxLength="MAX_SIZE" type="string"/>
+  <member name="SourceNode" stringMaxLength="MAX_SIZE" type="string"/>
+  <member name="SourceNodeTp" stringMaxLength="MAX_SIZE" type="string"/>
+  <member name="DestinationNode" stringMaxLength="MAX_SIZE" type="string"/>
+  <member name="DestinationNodeTp" stringMaxLength="MAX_SIZE" type="string"/>
+</struct>
+</types>
+
+<!-- Domain Library -->
+<domain_library name="MyDomainLibrary">
+  <domain name="MyDomain" domain_id="0">
+    <register_type name="topologia" type_ref="topologia"></register_type>
+    <topic name="status" register_type_ref="topologia"></topic>
+  </domain>
+</domain_library>
+
+<!-- Participant library -->
+<domain_participant_library name="MyParticipantLibrary">
+  <domain_participant name="kubernetes-control-plane1" domain_ref="MyDomainLibrary::MyDomain">
+    <participant_qos>
+      <discovery_config>
+        <participant_liveliness_lease_duration>
+          <sec>10</sec>
+          <nanosec>0</nanosec>
+        </participant_liveliness_lease_duration>
+        <participant_liveliness_assert_period>
+          <sec>2</sec>
+          <nanosec>0</nanosec>
+        </participant_liveliness_assert_period>
+        <max_liveliness_loss_detection_period>
+          <sec>1</sec>
+          <nanosec>0</nanosec>
+        </max_liveliness_loss_detection_period>
+      </discovery_config>
+      <resource_limits>
+        <participant_user_data_max_length>1024</participant_user_data_max_length>
+        <type_code_max_serialized_length>65530</type_code_max_serialized_length>
+        <type_object_max_serialized_length>65530</type_object_max_serialized_length>
+      </resource_limits>
+      <receiver_pool>
+        <buffer_size>65530</buffer_size>
+      </receiver_pool>
+      <discovery>
+        <initial_peers>
+          <element>239.255.0.1</element>
+          <element>8@builtin.udpv4://127.0.0.1</element>
+          <element>8@builtin.udpv4://147.83.118.147</element>
+          <element>8@builtin.udpv4://172.26.172.117</element>
+          <element>8@builtin.udpv4://172.16.10.43</element>
+          <element>8@builtin.udpv4://10.18.0.62</element>
+          <element>8@builtin.udpv4://10.18.0.50</element>
+          <element>8@builtin.udpv4://172.26.190.26</element>  
+          <element>8@builtin.shmem://</element>
+        </initial_peers>
+        <multicast_receive_addresses>
+          <element>239.255.0.1</element>
+        </multicast_receive_addresses>
+      </discovery>
+      <transport_builtin>
+        <udpv4>
+          <public_address>172.16.2.230</public_address>
+          <message_size_max>65530</message_size_max>
+          <recv_socket_buffer_size>1048576</recv_socket_buffer_size>
+          <send_socket_buffer_size>65530</send_socket_buffer_size>
+        </udpv4>
+      </transport_builtin>
+      <participant_name>
+        <name>kubernetes-control-plane1</name>
+      </participant_name>
+    </participant_qos>
+    <publisher name="kubernetes-control-plane1-pub">
+      <data_writer name="kubernetes-control-plane1-dw" topic_ref="status">
+        <datawriter_qos>
+          <liveliness>
+            <lease_duration>
+              <sec>2</sec>
+              <nanosec>0</nanosec>
+            </lease_duration>
+          </liveliness>
+          <reliability>
+            <kind>RELIABLE_RELIABILITY_QOS</kind>
+            <max_blocking_time>
+              <sec>2</sec>
+              <nanosec>0</nanosec>
+            </max_blocking_time>
+          </reliability>
+          <history>
+            <kind>KEEP_ALL_HISTORY_QOS</kind>
+          </history>
+          <durability>
+            <kind>TRANSIENT_LOCAL_DURABILITY_QOS</kind>
+          </durability>
+          <resource_limits>
+            <max_samples>LENGTH_UNLIMITED</max_samples>
+          </resource_limits>
+          <protocol>
+            <rtps_reliable_writer>
+              <min_send_window_size>20</min_send_window_size>
+              <max_send_window_size>20</max_send_window_size>
+              <heartbeats_per_max_samples>20</heartbeats_per_max_samples>
+              <min_nack_response_delay>
+                <sec>DURATION_ZERO_SEC</sec>
+                <nanosec>DURATION_ZERO_NSEC</nanosec>
+              </min_nack_response_delay>
+              <max_nack_response_delay>
+                <sec>DURATION_ZERO_SEC</sec>
+                <nanosec>DURATION_ZERO_NSEC</nanosec>
+              </max_nack_response_delay>
+              <fast_heartbeat_period>
+                <sec>DURATION_ZERO_SEC</sec>
+                <nanosec>5000000</nanosec>
+              </fast_heartbeat_period>
+              <max_heartbeat_retries>7</max_heartbeat_retries>
+              <late_joiner_heartbeat_period>
+                <sec>DURATION_ZERO_SEC</sec>
+                <nanosec>5000000</nanosec>
+              </late_joiner_heartbeat_period>
+            </rtps_reliable_writer>
+          </protocol>
+        </datawriter_qos>
+      </data_writer>
+      <publisher_qos>
+        <publisher_name><name>kubernetes-control-plane1-pub</name></publisher_name>
+      </publisher_qos>
+    </publisher>
+    <subscriber name="kubernetes-control-plane1-sub">
+      <data_reader name="kubernetes-control-plane1-dr" topic_ref="status">
+        <datareader_qos>
+          <liveliness>
+            <lease_duration>
+              <sec>2</sec>
+              <nanosec>0</nanosec>
+            </lease_duration>
+          </liveliness>
+          <reliability>
+            <kind>RELIABLE_RELIABILITY_QOS</kind>
+            <max_blocking_time>
+              <sec>2</sec>
+              <nanosec>0</nanosec>
+            </max_blocking_time>
+          </reliability>
+          <history>
+            <kind>KEEP_ALL_HISTORY_QOS</kind>
+          </history>
+          <durability>
+            <kind>TRANSIENT_LOCAL_DURABILITY_QOS</kind>
+          </durability>
+          <resource_limits>
+            <max_samples>LENGTH_UNLIMITED</max_samples>
+          </resource_limits>
+          <protocol>
+            <rtps_reliable_reader>
+              <min_heartbeat_response_delay>
+                <sec>DURATION_ZERO_SEC</sec>
+                <nanosec>DURATION_ZERO_NSEC</nanosec>
+              </min_heartbeat_response_delay>
+              <max_heartbeat_response_delay>
+                <sec>DURATION_ZERO_SEC</sec>
+                <nanosec>DURATION_ZERO_NSEC</nanosec>
+              </max_heartbeat_response_delay>
+            </rtps_reliable_reader>
+          </protocol> 
+        </datareader_qos>
+      </data_reader>
+      <subscriber_qos>
+        <subscriber_name><name>kubernetes-control-plane1-sub</name></subscriber_name>
+        <entity_factory>
+          <autoenable_created_entities>false</autoenable_created_entities>
+        </entity_factory>
+      </subscriber_qos>
+    </subscriber>
+  </domain_participant>
+</domain_participant_library>
+</dds>

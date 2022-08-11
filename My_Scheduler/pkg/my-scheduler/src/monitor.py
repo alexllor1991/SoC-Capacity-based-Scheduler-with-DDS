@@ -47,6 +47,7 @@ class ClusterMonitor:
         self.apps_v1 = client.AppsV1Api(client.ApiClient(configuration))
 
         self.all_pods = PodList()
+        self.multideployed_pods = PodList()
         self.scheduled_running_pods = PodList()
         self.all_nodes = NodeList()
         self.all_services = ServiceList()
@@ -156,24 +157,29 @@ class ClusterMonitor:
                         node.spec.unschedulable = True
                         print ("Node: " + node_.metadata.name + "--> Unschedulable")
                     node.update_node(self.all_pods)
+                    #node.update_node(self.multideployed_pods)
                     if len(self.client_data) > 0:
                         ip_s = ''
                         if str(node.metadata.name).endswith('control-plane'):
                             ip_s = str(node.spec.to_dict()['pod_cidr'][:-4]) + "1"
                         else:
                             ip_s = str(node.spec.to_dict()['pod_cidr'][:-3])
+                            #ip_s = str(node_.status.addresses[0].to_dict()['address'])
                         if ip_s in self.client_data:
                             current_SoC = self.client_data[ip_s]['SoC']
                             node.SoC = str(current_SoC)[:6]
                     self.all_nodes.items.append(node)
             for node_ in self.all_nodes.items:
                 node_.update_node(self.all_pods)
+                #node_.update_node(self.multideployed_pods)
+
                 if len(self.client_data) > 0:
                     ip_s = ''
                     if str(node_.metadata.name).endswith('control-plane'):
                         ip_s = str(node_.spec.to_dict()['pod_cidr'][:-4]) + "1"
                     else:
                         ip_s = str(node_.spec.to_dict()['pod_cidr'][:-3])
+                        #ip_s = str(node_.status.addresses[0].to_dict()['address'])
                     if ip_s in self.client_data:
                         current_SoC = self.client_data[ip_s]['SoC']
                         node_.SoC = str(current_SoC)[:6]
@@ -310,6 +316,72 @@ class ClusterMonitor:
 
             sleep(1)
 
+    def wait_for_multideployment_pod(self, new_pod):
+        """
+        Wait for Pod to be ready - got metrics from
+        metrics server
+        :param pod.Pod new_pod: Pod to wait for
+        :return:
+        """
+        retries = 0
+        retries_not_ready = 0
+
+        while True:
+            found = False
+
+            self.status_lock.acquire(blocking=True)
+
+            for pod in self.multideployed_pods.items:
+                if new_pod.metadata.name == pod.metadata.name:
+                    found = True
+                    break
+
+            self.status_lock.release()
+
+            if found:
+                #print('Waiting for pod %s' % new_pod.metadata.name)
+                val = new_pod.fetch_usage()
+
+                if val == 0:
+                    break
+                else:
+
+                    retries_not_ready += 1
+
+                    if retries_not_ready == NUMBER_OF_RETRIES:
+                        tmp_mem = 0.0
+                        tmp_cpu = 0.0
+                        found = False
+                        tmp_cont = None
+
+                        for cont in new_pod.spec.containers:
+                            if cont.resources.requests is not None:
+                                tmp_cont = cont
+                                found = True
+                                break
+
+                        if found:
+                            if 'cpu' in cont.resources.requests:
+                                tmp_cpu += float(new_pod.parse_usage_data(cont.resources.requests['cpu'], DataType.CPU))
+                            if 'memory' in cont.resources.requests:
+                                tmp_mem += float(new_pod.parse_usage_data(cont.resources.requests['memory'], DataType.MEMORY))
+                                
+                        if len(new_pod.usage) > settings.LIMIT_OF_RECORDS:
+                            new_pod.usage.pop(0)
+                        
+                        new_pod.usage.append({'cpu': tmp_cpu, 'memory': tmp_mem})
+
+                        break
+
+            else:
+
+                retries += 1
+
+                if retries == NUMBER_OF_RETRIES:
+                    break
+
+            sleep(1)
+
     def update_pods(self):
         """
         Update all Pods in cluster, if Pod exists add usage statistics
@@ -381,44 +453,66 @@ class ClusterMonitor:
                             if this_pod.event == "service":
                                 flag_incomplete = False
                                 serv = self.all_services.getService(lambda x: x.id_ == this_pod.service_id)
-                                vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == this_pod.id)
-                                vnf.completion_time = datetime.now()
-                                if vnf.completion_time > vnf.deadline:
-                                    self.deadline_violations += 1
-                                if vnf.starting_time is None:
-                                    vnf.starting_time = vnf.completion_time - timedelta(seconds=60)
-                                    vnf.execution_time = abs((vnf.completion_time - vnf.starting_time).seconds)
+                                #TODO Implemente bypass to avoid -> AttributeError: 'NoneType' object has no attribute 'vnfunctions'
+                                if serv is not None:
+                                    vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == this_pod.id)
+                                    vnf.completion_time = datetime.now()
+                                    if vnf.completion_time > vnf.deadline:
+                                        self.deadline_violations += 1
+                                    if vnf.starting_time is None:
+                                        vnf.starting_time = vnf.completion_time - timedelta(seconds=60)
+                                        vnf.execution_time = abs((vnf.completion_time - vnf.starting_time).seconds)
+                                    else:
+                                        vnf.execution_time = abs((vnf.completion_time - vnf.starting_time).seconds)
+                                    if serv.arrival_time is None:
+                                        serv.arrival_time = vnf.starting_time - timedelta(seconds=30)
+                                        vnf.flow_time = abs((vnf.completion_time - serv.arrival_time).seconds)
+                                        vnf.waiting_time = abs((vnf.starting_time - serv.arrival_time).seconds)
+                                    else:
+                                        vnf.flow_time = abs((vnf.completion_time - serv.arrival_time).seconds)
+                                    if vnf.id_ == serv.vnfunctions.items[-1].id_:
+                                        serv.makespan = abs((vnf.completion_time - serv.arrival_time).seconds)
+                                    if vnf.in_node is None:
+                                        vnf.in_node = pod_.spec.node_name
+                                        flag_incomplete = True
+                                    vnf_index = serv.vnfunctions.getIndexVNF(lambda x: x.id_ == vnf.id_)
+                                    serv.vnfunctions.items[vnf_index] = vnf
+                                    if flag_incomplete:
+                                        self.scheduled_VNFs += 1
+                                        all_VNF_scheduled = serv.vnfunctions.areAllVNFScheduled(lambda x: x.in_node != None)
+                                        if all_VNF_scheduled:
+                                            self.scheduled_services += 1
+                                    index_serv = self.all_services.getIndexService(lambda x: x.id_ == serv.id_)
+                                    self.all_services.items[index_serv] = serv
+                                    self.update_events_file(this_pod.event, vnf.name, vnf.id_, serv.id_, serv.name, vnf.service_arrival_time, None, vnf.r_rate, vnf.running_time, vnf.deadline, vnf.priority, vnf.waiting_time, vnf.starting_time, vnf.completion_time, vnf.execution_time, vnf.flow_time, vnf.in_node)
+                                    if int(serv.running_time) > 0:
+                                        self.delete_job(vnf.name)
+                                    else:
+                                        self.delete_deployment(vnf.name)
+                                    self.all_pods.items.remove(this_pod)
+                                    if self.scheduled_running_pods.isPodList(lambda x: x.metadata.name == i.metadata.name):
+                                        self.scheduled_running_pods.items.remove(this_pod)
+                                    print('Pod %s deleted' % this_pod.metadata.name)
+
                                 else:
-                                    vnf.execution_time = abs((vnf.completion_time - vnf.starting_time).seconds)
-                                if serv.arrival_time is None:
-                                    serv.arrival_time = vnf.starting_time - timedelta(seconds=30)
-                                    vnf.flow_time = abs((vnf.completion_time - serv.arrival_time).seconds)
-                                    vnf.waiting_time = abs((vnf.starting_time - serv.arrival_time).seconds)
-                                else:
-                                    vnf.flow_time = abs((vnf.completion_time - serv.arrival_time).seconds)
-                                if vnf.id_ == serv.vnfunctions.items[-1].id_:
-                                    serv.makespan = abs((vnf.completion_time - serv.arrival_time).seconds)
-                                if vnf.in_node is None:
-                                    vnf.in_node = pod_.spec.node_name
-                                    flag_incomplete = True
-                                vnf_index = serv.vnfunctions.getIndexVNF(lambda x: x.id_ == vnf.id_)
-                                serv.vnfunctions.items[vnf_index] = vnf
-                                if flag_incomplete:
-                                    self.scheduled_VNFs += 1
-                                    all_VNF_scheduled = serv.vnfunctions.areAllVNFScheduled(lambda x: x.in_node != None)
-                                    if all_VNF_scheduled:
-                                        self.scheduled_services += 1
-                                index_serv = self.all_services.getIndexService(lambda x: x.id_ == serv.id_)
-                                self.all_services.items[index_serv] = serv
-                                self.update_events_file(this_pod.event, vnf.name, vnf.id_, serv.id_, serv.name, vnf.service_arrival_time, None, vnf.r_rate, vnf.running_time, vnf.deadline, vnf.priority, vnf.waiting_time, vnf.starting_time, vnf.completion_time, vnf.execution_time, vnf.flow_time, vnf.in_node)
-                                if int(serv.running_time) > 0:
-                                    self.delete_job(vnf.name)
-                                else:
-                                    self.delete_deployment(vnf.name)
-                                self.all_pods.items.remove(this_pod)
-                                if self.scheduled_running_pods.isPodList(lambda x: x.metadata.name == i.metadata.name):
-                                    self.scheduled_running_pods.items.remove(this_pod)
-                                print('Pod %s deleted' % this_pod.metadata.name)
+                                    tmp_owner = None
+                                    for owner in this_pod.metadata.owner_references:
+                                        tmp_owner = owner
+                                        break
+                                    print(tmp_owner)
+
+                                    data = {}
+                                    data = tmp_owner.to_dict()
+
+                                    if data['kind'] == "ReplicaSet":
+                                        self.delete_deployment(this_pod.metadata.labels['app'])
+                                    
+                                    elif data['kind'] == "Job":
+                                        self.delete_job(this_pod.metadata.labels['app'])
+                                        
+                                    else:
+                                        print('Error!!! Pod %s cannot be deleted' % this_pod.metadata.name)
+                                    break
 
                             elif this_pod.event == "task":
                                 task = self.all_tasks.getTask(lambda x: x.id_ == this_pod.id)
@@ -455,10 +549,13 @@ class ClusterMonitor:
                                 break
                             print(tmp_owner)
 
-                            if tmp_owner['kind'] == "ReplicaSet":
+                            data = {}
+                            data = tmp_owner.to_dict()
+
+                            if data['kind'] == "ReplicaSet":
                                 self.delete_deployment(this_pod.metadata.labels['app'])
                             
-                            elif tmp_owner['kind'] == "Job":
+                            elif data['kind'] == "Job":
                                 self.delete_job(this_pod.metadata.labels['app'])
                                 
                             else:
@@ -531,10 +628,14 @@ class ClusterMonitor:
                                         break
                                     print(tmp_owner)
 
-                                    if tmp_owner['kind'] == "ReplicaSet":
+                                    data = {}
+
+                                    data = tmp_owner.to_dict()
+
+                                    if data['kind'] == "ReplicaSet":
                                         self.delete_deployment(this_pod.metadata.labels['app'])
                                     
-                                    elif tmp_owner['kind'] == "Job":
+                                    elif data['kind'] == "Job":
                                         self.delete_job(this_pod.metadata.labels['app'])
                                         
                                     else:
@@ -691,13 +792,14 @@ class ClusterMonitor:
                                     'Proc_Capacity': str(node.proc_capacity),
                                     'Net_In_Pkt': str(net_in_pkt),
                                     'SoC': str(node.SoC)})
-                    self.dataset_train = self.dataset_train.append({'Timestamp': date,
-                                                                    'Node': node.metadata.name,
-                                                                    'CPU': node.usage['cpu'],
-                                                                    'Net_In_Pkt': net_in_pkt,
-                                                                    'SoC_real': node.SoC,
-                                                                    'SoC_pred': '0',
-                                                                    'SoC_pred_upd': '0'}, ignore_index=True)
+                    if (settings.SCHEDULING_CRITERIA == 0 or settings.SCHEDULING_CRITERIA == 1):
+                        self.dataset_train = self.dataset_train.append({'Timestamp': date,
+                                                                        'Node': node.metadata.name,
+                                                                        'CPU': node.usage['cpu'],
+                                                                        'Net_In_Pkt': net_in_pkt,
+                                                                        'SoC_real': node.SoC,
+                                                                        'SoC_pred': '0',
+                                                                        'SoC_pred_upd': '0'}, ignore_index=True)
                 else:
                     date = str(datetime.now())
                     writer1.writerow({'Timestamp': date,
@@ -707,13 +809,14 @@ class ClusterMonitor:
                                     'Proc_Capacity': str(node.proc_capacity),
                                     'Net_In_Pkt': str(0.0),
                                     'SoC': str(node.SoC)})
-                    self.dataset_train = self.dataset_train.append({'Timestamp': date,
-                                                                    'Node': node.metadata.name,
-                                                                    'CPU': node.usage['cpu'],
-                                                                    'Net_In_Pkt': 0.0,
-                                                                    'SoC_real': node.SoC,
-                                                                    'SoC_pred': '0',
-                                                                    'SoC_pred_upd': '0'}, ignore_index=True)
+                    if (settings.SCHEDULING_CRITERIA == 0 or settings.SCHEDULING_CRITERIA == 1):
+                        self.dataset_train = self.dataset_train.append({'Timestamp': date,
+                                                                        'Node': node.metadata.name,
+                                                                        'CPU': node.usage['cpu'],
+                                                                        'Net_In_Pkt': 0.0,
+                                                                        'SoC_real': node.SoC,
+                                                                        'SoC_pred': '0',
+                                                                        'SoC_pred_upd': '0'}, ignore_index=True)
 
     def restart_dataset_train(self):
         '''

@@ -47,6 +47,23 @@ class PodList(object):
         else:
             return False
 
+    def anyPodRunningVNF(self, filter):
+        """
+        Verify is pod is running a VNF
+        """
+        found = False
+        if len(self.items) > 0:
+            for i in self.items:
+                if filter(i):
+                    found = True
+                    break
+            if found:
+                return True
+            else:
+                return False
+        else:
+            return False
+
     def getPod(self, filter):
         '''
         Return the pod object if it is present in the pod list

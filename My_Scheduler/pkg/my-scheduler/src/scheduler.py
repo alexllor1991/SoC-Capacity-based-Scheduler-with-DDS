@@ -1,7 +1,7 @@
 import os
 import csv
 import time
-from time import sleep
+#from time import sleep
 from datetime import datetime, timedelta
 from dateutil import parser
 from threading import Thread
@@ -17,6 +17,9 @@ from monitor import ClusterMonitor
 from node import NodeList
 from pod import DataType, Pod, PodList
 from service import ServiceList, TaskList, Service, VNFunction, Task
+from dds import DDS_Algo
+
+#import rti.connextdds as dds_package
 
 from kubernetes import client, config, watch
 from kubernetes.client.rest import ApiException
@@ -29,14 +32,17 @@ pd.options.mode.chained_assignment = None
 class Scheduler:
     def __init__(self):
         self.monitor = ClusterMonitor()
+        self.localdds = "kubernetes-control-plane1"
+        self.dds = DDS_Algo("k8s_master", self.localdds, "GC_UPC_1")
         self.watcherpod = watch.Watch()
         configuration = client.Configuration()
         self.v1 = client.CoreV1Api(client.ApiClient(configuration))
         self.batch_v1 = client.BatchV1Api(client.ApiClient(configuration))
         self.apps_v1 = client.AppsV1Api(client.ApiClient(configuration))
         self.priority_list = multiprocessing.Manager().list()
+        self.time_interval_multideployment = settings.TIME_INTERVAL_MULTIDEPLOYMENTS
 
-        self.vnf = VNFunction(None,None,None,None)
+        self.vnf = VNFunction(None,None,None,None,None)
         self.task = Task(None, None, None, None, None, None)
 
         self.scheduler_name = 'my-scheduler'
@@ -83,8 +89,15 @@ class Scheduler:
         p3 = Thread(target=self.monitor.monitor_SoC_nodes)
         p3.start()
 
-        p4 = Thread(target=self.check_model)
-        p4.start()
+        if (settings.SCHEDULING_CRITERIA == 0 or settings.SCHEDULING_CRITERIA == 1):
+            p4 = Thread(target=self.check_model)
+            p4.start()
+
+        p5 = Thread(target=self.update_GC)
+        p5.start()
+
+        p6 = Thread(target=self.dds.read_samples, args=(self.monitor, self,))
+        p6.start()
         
         while True:
             try:
@@ -94,7 +107,7 @@ class Scheduler:
                         event_name = str(eventpod['object'].metadata.name)
                         if eventpod['object'].metadata.annotations['event'] == "service" or event_name.startswith('vnf'):
                             if not self.monitor.all_services.isServiceList(lambda x: x.id_ == eventpod['object'].metadata.annotations['service_id']):
-                                new_service = Service(eventpod['object'].metadata.annotations['service_id'], eventpod['object'].metadata.annotations['service_name'], eventpod['object'].metadata.annotations['service_deadline'], eventpod['object'].metadata.annotations['service_priority'], eventpod['object'].metadata.annotations['service_running_time'])
+                                new_service = Service(eventpod['object'].metadata.annotations['service_id'], eventpod['object'].metadata.annotations['service_name'], eventpod['object'].metadata.annotations['service_deadline'], eventpod['object'].metadata.annotations['service_priority'], eventpod['object'].metadata.annotations['service_running_time'], eventpod['object'].metadata.annotations['amount_vnfs'], eventpod['object'].metadata.annotations['multideployment'])
                                 print ('New service ADDED', new_service.name)
                                 new_service.arrival_time = datetime.now()
                                 self.monitor.all_services.items.append(new_service)
@@ -102,15 +115,17 @@ class Scheduler:
                             serv = self.monitor.all_services.getService(lambda x: x.id_ == eventpod['object'].metadata.annotations['service_id'])
                         
                             if not serv.vnfunctions.isVNFList(lambda x: x.id_ == eventpod['object'].metadata.annotations['vnf_id']):
-                                new_vnf = VNFunction(eventpod['object'].metadata.annotations['vnf_id'], eventpod['object'].metadata.annotations['vnf_name'], eventpod['object'].metadata.annotations['required_service_rate'], eventpod['object'].metadata.annotations['service_id'])
+                                new_vnf = VNFunction(eventpod['object'].metadata.annotations['vnf_id'], eventpod['object'].metadata.annotations['vnf_name'], eventpod['object'].metadata.annotations['required_service_rate'], eventpod['object'].metadata.annotations['service_id'], eventpod['object'].metadata.annotations['service_name'])
                                 new_vnf.deadline = parser.parse(serv.deadline)
                                 new_vnf.priority = serv.priority
                                 new_vnf.running_time = serv.running_time
                                 new_vnf.service_arrival_time = serv.arrival_time
+                                new_vnf.multideployment = serv.multideployment
                                 self.monitor.update_events_file(eventpod['object'].metadata.annotations['event'], new_vnf.name, new_vnf.id_, eventpod['object'].metadata.annotations['service_id'], eventpod['object'].metadata.annotations['service_name'], new_vnf.service_arrival_time, None, new_vnf.r_rate, new_vnf.running_time, new_vnf.deadline, new_vnf.priority, None, None, None, None, None, None)
                                 serv.vnfunctions.items.append(new_vnf)
                                 serv.vnfunctions.items.sort(key=lambda x: x.id_, reverse=False)
                                 self.monitor.requested_VNFs += 1
+
                             self.vnf = serv.vnfunctions.getVNF(lambda x: x.id_ == eventpod['object'].metadata.annotations['vnf_id'])
 
                             index = self.monitor.all_services.getIndexService(lambda x: x.id_ == serv.id_)
@@ -143,6 +158,27 @@ class Scheduler:
                             new_pod.service_arrival_time = self.vnf.service_arrival_time
                             new_pod.priority = self.vnf.priority
                             new_pod.event = 'service'
+
+                            if self.vnf.multideployment:
+                                self.monitor.multideployed_pods.items.append(new_pod)
+                                deadline = abs((new_pod.deadline - datetime.now() - timedelta(seconds=int(new_pod.running_time))).seconds)
+                                data = {}
+                                data["Identificador"] = self.vnf.servicename
+                                data["NodeId"] = new_pod.metadata.name
+                                data["TerminationPointId"] = str(new_pod.parse_usage_data(new_pod.spec.containers[0].resources.requests['cpu'], DataType.CPU))
+                                data["LinkId"] = str(self.vnf.running_time)
+                                data["SourceNodeTp"] = str(deadline)
+                                data["DestinationNodeTp"] = str(eventpod['object'].metadata.annotations['amount_vnfs'])
+                                data["SourceNode"] = str(self.vnf.multideployment)
+                                data["DestinationNode"] = self.localdds
+                                
+                                self.dds.lock.acquire()
+                                writer = self.dds.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
+                                writer.instance.set_dictionary(data)
+                                dt = int(datetime.now().timestamp() * 1000000000)
+                                writer.write(source_timestamp=dt)
+                                self.dds.lock.release()
+                        
                         elif eventpod['object'].metadata.annotations['event'] =='task' or event_name.startswith('task'):
                             new_pod.demanded_processing = self.task.r_rate
                             new_pod.id = self.task.id_
@@ -166,32 +202,33 @@ class Scheduler:
 
                         self.monitor.status_lock.release()
 
-                        if settings.PRIORITY_LIST_CRITERIA == 0: # priority list is sorted by taking into account the service deadline
-                            prov_list = list(self.priority_list)
-                            prov_list.append(new_pod)
-                            prov_list.sort(key=lambda x: x.deadline, reverse=False)
-                            self.priority_list = prov_list.copy()
-                        elif settings.PRIORITY_LIST_CRITERIA == 1: # priority list is sorted by taking into account the service priority
-                            prov_list = list(self.priority_list)
-                            prov_list.append(new_pod)
-                            prov_list.sort(key=lambda x: x.priority, reverse=True)
-                            self.priority_list = prov_list.copy()
-                        elif settings.PRIORITY_LIST_CRITERIA == 2: # priority list is sorted dynamically by taking into account an equation
-                            task_delay = abs((new_pod.deadline - datetime.now() - timedelta(seconds=int(new_pod.running_time))).seconds)
-                            if new_pod.event == 'service': 
-                                waiting_time = abs((datetime.now() - new_pod.service_arrival_time).seconds)
-                            elif new_pod.event == 'task':
-                                waiting_time = abs((datetime.now() - new_pod.task_arrival_time).seconds)
+                        if not self.vnf.multideployment:
+                            if settings.PRIORITY_LIST_CRITERIA == 0: # priority list is sorted by taking into account the service deadline
+                                prov_list = list(self.priority_list)
+                                prov_list.append(new_pod)
+                                prov_list.sort(key=lambda x: x.deadline, reverse=False)
+                                self.priority_list = prov_list.copy()
+                            elif settings.PRIORITY_LIST_CRITERIA == 1: # priority list is sorted by taking into account the service priority
+                                prov_list = list(self.priority_list)
+                                prov_list.append(new_pod)
+                                prov_list.sort(key=lambda x: x.priority, reverse=True)
+                                self.priority_list = prov_list.copy()
+                            elif settings.PRIORITY_LIST_CRITERIA == 2: # priority list is sorted dynamically by taking into account an equation
+                                task_delay = abs((new_pod.deadline - datetime.now() - timedelta(seconds=int(new_pod.running_time))).seconds)
+                                if new_pod.event == 'service': 
+                                    waiting_time = abs((datetime.now() - new_pod.service_arrival_time).seconds)
+                                elif new_pod.event == 'task':
+                                    waiting_time = abs((datetime.now() - new_pod.task_arrival_time).seconds)
+                                else:
+                                    waiting_time = 0
+                                rank = (settings.delta_1 * task_delay) - ((1 - settings.delta_1) * waiting_time)
+                                new_pod.rank = rank
+                                prov_list = list(self.priority_list)
+                                prov_list.append(new_pod)
+                                prov_list.sort(key=lambda x: x.rank, reverse=False)
+                                self.priority_list = prov_list.copy()
                             else:
-                                waiting_time = 0
-                            rank = (settings.delta_1 * task_delay) - ((1 - settings.delta_1) * waiting_time)
-                            new_pod.rank = rank
-                            prov_list = list(self.priority_list)
-                            prov_list.append(new_pod)
-                            prov_list.sort(key=lambda x: x.rank, reverse=False)
-                            self.priority_list = prov_list.copy()
-                        else:
-                            print('None priority list criteria has been set')
+                                print('None priority list criteria has been set')
 
             except Exception as e:
                 print(str(e))
@@ -216,9 +253,10 @@ class Scheduler:
             writer3 = csv.DictWriter(csvfile3, fieldnames=self.monitor.fieldnames_events)
             writer3.writeheader()
 
-        with open('Predictions_results.csv', 'w', buffering=1) as csvfile4:
-            writer4 = csv.DictWriter(csvfile4, fieldnames=self.fieldnames_prediction_results)
-            writer4.writeheader()
+        if (settings.SCHEDULING_CRITERIA == 0 or settings.SCHEDULING_CRITERIA == 1):
+            with open('Predictions_results.csv', 'w', buffering=1) as csvfile4:
+                writer4 = csv.DictWriter(csvfile4, fieldnames=self.fieldnames_prediction_results)
+                writer4.writeheader()
 
     def update_result_files(self):
         '''
@@ -392,7 +430,6 @@ class Scheduler:
                     else:
                         if self.monitor.all_pods.isPodList(lambda x: x.metadata.name == obj.metadata.name):
                             new_node = self.choose_node(obj)
-
                             if new_node is not None:
                                 self.bind_to_node(obj.metadata.name, new_node.metadata.name)
                                 """
@@ -420,6 +457,26 @@ class Scheduler:
                                         all_VNF_scheduled = serv.vnfunctions.areAllVNFScheduled(lambda x: x.in_node != None)
                                         if all_VNF_scheduled:
                                             self.monitor.scheduled_services += 1
+
+                                            # Notify service deployment to the GC
+                                            # if  serv.multideployment:
+                                            #     data = {}
+                                            #     data["Identificador"] = serv.name
+                                            #     data["NodeId"] = ""
+                                            #     data["TerminationPointId"] = "0"
+                                            #     data["LinkId"] = "0"
+                                            #     data["SourceNodeTp"] = ""
+                                            #     data["DestinationNodeTp"] = "0"
+                                            #     data["SourceNode"] = str(True)
+                                            #     data["DestinationNode"] = self.localdds
+                                                
+                                            #     self.dds.lock.acquire()
+                                            #     writer = self.dds.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
+                                            #     writer.instance.set_dictionary(data)
+                                            #     dt = int(datetime.now().timestamp() * 1000000000)
+                                            #     writer.write(source_timestamp=dt)
+                                            #     self.dds.lock.release()
+                                        
                                         index_serv = self.monitor.all_services.getIndexService(lambda x: x.id_ == serv.id_)
                                         self.monitor.all_services.items[index_serv] = serv
                                         self.update_result_files()
@@ -448,6 +505,57 @@ class Scheduler:
                             """
                 except Exception as e:
                     print(str(e))
+
+    def update_GC(self):
+        """
+        Method to update the GC by sending it
+        the nodes status regarding CPU and SOC
+        """
+        while True:
+            try:
+                self.monitor.update_nodes()
+                for node in self.monitor.all_nodes.items:
+                    data = {}
+                    data["Identificador"] = "Node_Status"
+                    data["NodeId"] = node.metadata.name
+                    data["TerminationPointId"] = str(node.usage['cpu'])
+                    data["LinkId"] = str(node.SoC)
+                    if node.pods.anyPodRunningVNF(lambda x: x.metadata.name.startswith('vnf')):
+                        data["SourceNode"] = "1"
+                    else:
+                        data["SourceNode"] = "0"
+                    data["DestinationNode"] = self.localdds
+
+                    self.dds.lock.acquire()
+                    writer = self.dds.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
+                    writer.instance.set_dictionary(data)
+                    dt = int(datetime.now().timestamp() * 1000000000)
+                    writer.write(source_timestamp=dt)
+                    self.dds.lock.release()
+
+                time.sleep(self.time_interval_multideployment)
+            except Exception as e:
+                print(str(e))
+
+    def is_pod_deployed(self, pod):
+        self.monitor.wait_for_pod(pod)
+        pod_scheduled = False
+        while not pod_scheduled:
+            try:
+                resp = self.v1.read_namespaced_pod(pod.metadata.name, 'default')
+                if resp.spec.node_name is not None or resp.spec.node_name != 'None':
+                    pod_scheduled = True
+                    pod.spec.node_name = resp.spec.node_name
+                    index_pod = self.monitor.all_pods.getIndexPod(lambda x: x.metadata.name == pod.metadata.name)
+                    if index_pod is not None:
+                        self.monitor.all_pods.items[index_pod] = pod
+                    else:
+                        self.monitor.all_pods.items.append(pod)
+            except ApiException as e:
+                print("Exception when calling CoreV1Api->read_namespaced_pod: %s\n" % e)
+                break
+
+        return pod_scheduled
 
     def choose_node(self, pod):
         """
@@ -538,6 +646,25 @@ class Scheduler:
 
                         self.monitor.rejected_services += 1
                         self.monitor.rejected_VNFs += numberVNFs - vnf_serv_scheduled
+
+                        # Notify service rejection to the GC
+                        if  serv.multideployment:
+                            data = {}
+                            data["Identificador"] = serv.name
+                            data["NodeId"] = ""
+                            data["TerminationPointId"] = "0"
+                            data["LinkId"] = "0"
+                            data["SourceNodeTp"] = ""
+                            data["DestinationNodeTp"] = "-1"
+                            data["SourceNode"] = str(True)
+                            data["DestinationNode"] = self.localdds
+
+                            self.dds.lock.acquire()
+                            writer = self.dds.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
+                            writer.instance.set_dictionary(data)
+                            dt = int(datetime.now().timestamp() * 1000000000)
+                            writer.write(source_timestamp=dt)
+                            self.dds.lock.release()
 
                         self.update_result_files()
 
@@ -854,6 +981,105 @@ class Scheduler:
             print('exception' + str(e))
             return False
 
+    def create_deployment(self, event_name, node_name, cpu_requested, namespace='default'):
+        """
+        Create deployment on an specific Node
+        :param str event_name: event name to deploy
+        :param str node_name: node name to deploy the event
+        :param str cpu_requested: cpu requested by the event
+        :param str namespace: namespace of event
+        :return: True if event was deployed successfully, False otherwise
+        """
+        # Configureate Pod template container
+        container = client.V1Container(
+            name=event_name,
+            image="alexllor1991/complexities:latest",
+            ports=[client.V1ContainerPort(container_port=8080)],
+            resources=client.V1ResourceRequirements(
+                requests={"cpu": cpu_requested + "m", "memory": "325Mi"}
+            ),
+            volume_mounts=[client.V1VolumeMount(name="tz-paris", mount_path='/etc/localtime')],
+        )
+
+        volume = client.V1Volume(name='tz-paris', host_path=client.V1HostPathVolumeSource(path="/etc/localtime"))
+
+        toleration1 = client.V1Toleration(effect="NoSchedule", key="node-role.kubernetes.io/master", operator="Exists")
+        toleration2 = client.V1Toleration(effect="NoSchedule", key="node-role.kubernetes.io/control-plane", operator="Exists")
+
+        # Create and configure a spec section
+        template = client.V1PodTemplateSpec(
+            metadata=client.V1ObjectMeta(labels={"app": event_name}),
+            spec=client.V1PodSpec(containers=[container], volumes=[volume], image_pull_secrets=[client.V1LocalObjectReference('regcred')], node_selector={"kubernetes.io/hostname":node_name}, tolerations=[toleration1, toleration2]),
+        )
+
+        # Create the specification of deployment
+        spec = client.V1DeploymentSpec(
+            replicas=1, template=template, strategy={"type":"Recreate"}, selector={
+                "matchLabels":
+                {"app": event_name}})
+
+        deployment = client.V1Deployment(
+            api_version="apps/v1",
+            kind="Deployment",
+            metadata=client.V1ObjectMeta(name=event_name),
+            spec=spec,
+        )
+
+        try:
+            self.apps_v1.create_namespaced_deployment(namespace, deployment)
+            return True
+        except Exception as e:
+            print('exeception' + str(e))
+            return False
+
+    def create_job(self, event_name, node_name, cpu_requested, namespace='default'):
+        """
+        Create job on an specific Node
+        :param str event_name: event name to deploy
+        :param str node_name: node name to deploy the event
+        :param str cpu_requested: cpu requested by the event
+        :param str namespace: namespace of event
+        :return: True if event was deployed successfully, False otherwise
+        """
+        # Configureate Pod template container
+        container = client.V1Container(
+            name=event_name,
+            image="alexllor1991/cpu_stress:latest",
+            ports=[client.V1ContainerPort(container_port=8080)],
+            resources=client.V1ResourceRequirements(
+                requests={"cpu": cpu_requested + "m", "memory": "325Mi"}
+            ),
+            volume_mounts=[client.V1VolumeMount(name="tz-paris", mount_path='/etc/localtime')],
+        )
+
+        volume = client.V1Volume(name='tz-paris', host_path=client.V1HostPathVolumeSource(path="/etc/localtime"))
+
+        toleration1 = client.V1Toleration(effect="NoSchedule", key="node-role.kubernetes.io/master", operator="Exists")
+        toleration2 = client.V1Toleration(effect="NoSchedule", key="node-role.kubernetes.io/control-plane", operator="Exists")
+
+        # Create and configure a spec section
+        template = client.V1PodTemplateSpec(
+            metadata=client.V1ObjectMeta(labels={"app": event_name}),
+            spec=client.V1PodSpec(restart_policy="Never", containers=[container], volumes=[volume], image_pull_secrets=[client.V1LocalObjectReference('regcred')], node_selector={"kubernetes.io/hostname":node_name}, tolerations=[toleration1, toleration2]),
+        )
+
+        # Create the specification of job
+        spec = client.V1JobSpec(
+            template=template, ttl_seconds_after_finished=10)
+
+        job = client.V1Job(
+            api_version="batch/v1",
+            kind="Job",
+            metadata=client.V1ObjectMeta(name=event_name),
+            spec=spec)
+
+        try:
+            self.batch_v1.create_namespaced_job(namespace, job)
+            return True
+        except Exception as e:
+            print('exeception' + str(e))
+            return False
+        
     def pass_to_scheduler(self, name_, namespace_, scheduler_name_, event_):
         """
         Pass deployment to be scheduled by different scheduler

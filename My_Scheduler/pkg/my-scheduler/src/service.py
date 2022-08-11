@@ -130,7 +130,7 @@ class TaskList(object):
 
 class Service(object):
 
-    def __init__(self, id_, n, d, p, tr_):
+    def __init__(self, id_, n, d, p, tr_, vnfs, multideployment):
         """
         :param Service Id:
         :param Service name:
@@ -145,6 +145,8 @@ class Service(object):
         self.priority = p  # service priority 
         self.running_time = tr_ # time during the service have to run (float)
         self.vnfunctions = VNFList()  # list of VNFs in a service (list)
+        self.amount_vnfs = vnfs # amount of VNFs in the SFC (integer)
+        self.multideployment = multideployment # the deployment comprise several clusters (boolean)
         
         self.arrival_time = None  # arrival time of the service (datetime)
         self.waiting_time_first_VNF = None  # waiting time since the service arrived and the starting time of its first function (float)
@@ -166,7 +168,7 @@ class Service(object):
 
 class VNFunction(object):
 
-    def __init__(self, id_, n, r, s_id):
+    def __init__(self, id_, n, r, s_id, s_name):
         """
         :param VNF Id:
         :param VNF name:
@@ -178,6 +180,7 @@ class VNFunction(object):
         self.name = n   # vnf name (string)
         self.r_rate = r     # service rate demanded by the vnf to execute in a node
         self.serviceid = s_id  # service id (int)
+        self.servicename = s_name # service name (string)
 
         self.running_time = None  # amount time to run in node
         self.deadline = None
@@ -189,6 +192,7 @@ class VNFunction(object):
         self.in_node = None  # node where the function is mapped
         self.flow_time = None  # total time of the VNF in the system (completion_time - service_arrival_time) (float)
         self.execution_time = None #  execution time of the VNF (completion_time - starting_time) (float)
+        self.multideployment = None 
 
     def to_dir(self):
         print( \
