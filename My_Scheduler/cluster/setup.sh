@@ -106,3 +106,20 @@ echo ""
 
 kind export kubeconfig
 kubectl cluster-info
+kubectl config view --raw
+
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: default-token
+  annotations:
+    kubernetes.io/service-account.name: default
+type: kubernetes.io/service-account-token
+EOF
+
+APISERVER=$(kubectl config view --minify | grep server | cut -f 2- -d ":" | tr -d " ")
+SECRET_NAME=$(kubectl get secrets | grep ^default | cut -f1 -d ' ')
+TOKEN=$(kubectl describe secret $SECRET_NAME | grep -E '^token' | cut -f2 -d':' | tr -d " ")
+
+echo $TOKEN

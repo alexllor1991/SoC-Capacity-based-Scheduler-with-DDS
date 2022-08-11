@@ -1,6 +1,8 @@
 # this config file contains all config fields with comments
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  apiServerAddress: "172.16.2.152"
 # patch the generated kubeadm config with some extra settings
 #kubeadmConfigPatches:
 #- |
@@ -29,7 +31,7 @@ apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
 # the control plane node config
 - role: control-plane
-  image: kindest/node:v1.19.1
+  image: kindest/node:v1.24.2
   extraMounts:
   - hostPath: /usr/share/zoneinfo/Europe/Paris
     containerPath: /etc/localtime
@@ -40,36 +42,52 @@ nodes:
   #     kubeletExtraArgs:
   #       system-reserved: memory=6Gi,cpu=2   
 # the three workers
+  extraPortMappings:
+  - containerPort: 7400
+    hostPort: 7400
+    listenAddress: "127.0.0.1"
+    protocol: UDP
+  - containerPort: 7410
+    hostPort: 7410
+    listenAddress: "127.0.0.1"
+    protocol: UDP
+  - containerPort: 7411
+    hostPort: 7411
+    listenAddress: "127.0.0.1"
+    protocol: UDP
 - role: worker
-  image: kindest/node:v1.19.1
+  image: kindest/node:v1.24.2 #1.19.1
   extraMounts:
   - hostPath: /usr/share/zoneinfo/Europe/Paris
     containerPath: /etc/localtime
-  # kubeadmConfigPatches:
-  # - |
-  #   kind: JoinConfiguration
-  #   nodeRegistration:
+  kubeadmConfigPatches:
+  - |
+    kind: JoinConfiguration
+    nodeRegistration:
+        name: kubernetes-worker1
   #     kubeletExtraArgs:
   #       system-reserved: memory=6Gi,cpu=2
 - role: worker
-  image: kindest/node:v1.19.1
+  image: kindest/node:v1.24.2
   extraMounts:
   - hostPath: /usr/share/zoneinfo/Europe/Paris
     containerPath: /etc/localtime
-  # kubeadmConfigPatches:
-  # - |
-  #   kind: JoinConfiguration
-  #   nodeRegistration:
+  kubeadmConfigPatches:
+  - |
+    kind: JoinConfiguration
+    nodeRegistration:
+        name: kubernetes-worker2
   #     kubeletExtraArgs:
   #       system-reserved: memory=6Gi,cpu=2
 - role: worker
-  image: kindest/node:v1.19.1
+  image: kindest/node:v1.24.2
   extraMounts:
   - hostPath: /usr/share/zoneinfo/Europe/Paris
     containerPath: /etc/localtime
-  # kubeadmConfigPatches:
-  # - |
-  #   kind: JoinConfiguration
-  #   nodeRegistration:
+  kubeadmConfigPatches:
+  - |
+    kind: JoinConfiguration
+    nodeRegistration:
+        name: kubernetes-worker3
   #     kubeletExtraArgs:
   #       system-reserved: memory=6Gi,cpu=2
