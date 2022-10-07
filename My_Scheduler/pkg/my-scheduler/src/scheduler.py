@@ -32,7 +32,7 @@ pd.options.mode.chained_assignment = None
 class Scheduler:
     def __init__(self):
         self.monitor = ClusterMonitor()
-        self.localdds = "kubernetes-control-plane1"
+        self.localdds = "kubernetes-control-plane3"
         self.dds = DDS_Algo("k8s_master", self.localdds, "GC_UPC_1")
         self.watcherpod = watch.Watch()
         configuration = client.Configuration()
@@ -173,7 +173,7 @@ class Scheduler:
                                 data["DestinationNode"] = self.localdds
                                 
                                 self.dds.lock.acquire()
-                                writer = self.dds.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
+                                writer = self.dds.connector.get_output("kubernetes-control-plane3-pub::kubernetes-control-plane3-dw")
                                 writer.instance.set_dictionary(data)
                                 dt = int(datetime.now().timestamp() * 1000000000)
                                 writer.write(source_timestamp=dt)
@@ -309,7 +309,7 @@ class Scheduler:
 
                                         self.monitor.status_lock.acquire(blocking=True)
 
-                                        self.monitor.all_services.items.remove(serv)
+                                        #self.monitor.all_services.items.remove(serv)
                                         for i in self.monitor.all_pods.items:
                                             if i.service_id == serv.id_:
                                                 self.monitor.all_pods.items.remove(i)
@@ -525,9 +525,10 @@ class Scheduler:
                     else:
                         data["SourceNode"] = "0"
                     data["DestinationNode"] = self.localdds
+                    data["SourceNodeTp"] = node.ready
 
                     self.dds.lock.acquire()
-                    writer = self.dds.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
+                    writer = self.dds.connector.get_output("kubernetes-control-plane3-pub::kubernetes-control-plane3-dw")
                     writer.instance.set_dictionary(data)
                     dt = int(datetime.now().timestamp() * 1000000000)
                     writer.write(source_timestamp=dt)
@@ -625,7 +626,7 @@ class Scheduler:
 
                         self.monitor.status_lock.acquire(blocking=True)
 
-                        self.monitor.all_services.items.remove(serv)
+                        #self.monitor.all_services.items.remove(serv)
                         for i in self.monitor.all_pods.items:
                             if i.service_id == serv.id_:
                                 self.monitor.all_pods.items.remove(i)
@@ -660,7 +661,7 @@ class Scheduler:
                             data["DestinationNode"] = self.localdds
 
                             self.dds.lock.acquire()
-                            writer = self.dds.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
+                            writer = self.dds.connector.get_output("kubernetes-control-plane3-pub::kubernetes-control-plane3-dw")
                             writer.instance.set_dictionary(data)
                             dt = int(datetime.now().timestamp() * 1000000000)
                             writer.write(source_timestamp=dt)
@@ -998,18 +999,18 @@ class Scheduler:
             resources=client.V1ResourceRequirements(
                 requests={"cpu": cpu_requested + "m", "memory": "325Mi"}
             ),
-            volume_mounts=[client.V1VolumeMount(name="tz-paris", mount_path='/etc/localtime')],
+            #volume_mounts=[client.V1VolumeMount(name="tz-paris", mount_path='/etc/localtime')],
         )
 
-        volume = client.V1Volume(name='tz-paris', host_path=client.V1HostPathVolumeSource(path="/etc/localtime"))
+        #volume = client.V1Volume(name='tz-paris', host_path=client.V1HostPathVolumeSource(path="/etc/localtime"))
 
         toleration1 = client.V1Toleration(effect="NoSchedule", key="node-role.kubernetes.io/master", operator="Exists")
         toleration2 = client.V1Toleration(effect="NoSchedule", key="node-role.kubernetes.io/control-plane", operator="Exists")
 
         # Create and configure a spec section
         template = client.V1PodTemplateSpec(
-            metadata=client.V1ObjectMeta(labels={"app": event_name}),
-            spec=client.V1PodSpec(containers=[container], volumes=[volume], image_pull_secrets=[client.V1LocalObjectReference('regcred')], node_selector={"kubernetes.io/hostname":node_name}, tolerations=[toleration1, toleration2]),
+            metadata=client.V1ObjectMeta(labels={"app": event_name}, annotations={"Deployment_type": "Persistent"}),
+            spec=client.V1PodSpec(containers=[container], image_pull_secrets=[client.V1LocalObjectReference('regcred')], node_selector={"kubernetes.io/hostname":node_name}, tolerations=[toleration1, toleration2]),  #volumes=[volume],
         )
 
         # Create the specification of deployment
@@ -1049,18 +1050,18 @@ class Scheduler:
             resources=client.V1ResourceRequirements(
                 requests={"cpu": cpu_requested + "m", "memory": "325Mi"}
             ),
-            volume_mounts=[client.V1VolumeMount(name="tz-paris", mount_path='/etc/localtime')],
+            #volume_mounts=[client.V1VolumeMount(name="tz-paris", mount_path='/etc/localtime')],
         )
 
-        volume = client.V1Volume(name='tz-paris', host_path=client.V1HostPathVolumeSource(path="/etc/localtime"))
+        #volume = client.V1Volume(name='tz-paris', host_path=client.V1HostPathVolumeSource(path="/etc/localtime"))
 
         toleration1 = client.V1Toleration(effect="NoSchedule", key="node-role.kubernetes.io/master", operator="Exists")
         toleration2 = client.V1Toleration(effect="NoSchedule", key="node-role.kubernetes.io/control-plane", operator="Exists")
 
         # Create and configure a spec section
         template = client.V1PodTemplateSpec(
-            metadata=client.V1ObjectMeta(labels={"app": event_name}),
-            spec=client.V1PodSpec(restart_policy="Never", containers=[container], volumes=[volume], image_pull_secrets=[client.V1LocalObjectReference('regcred')], node_selector={"kubernetes.io/hostname":node_name}, tolerations=[toleration1, toleration2]),
+            metadata=client.V1ObjectMeta(labels={"app": event_name}, annotations={"Deployment_type": "Limited"}),
+            spec=client.V1PodSpec(restart_policy="Never", containers=[container], image_pull_secrets=[client.V1LocalObjectReference('regcred')], node_selector={"kubernetes.io/hostname":node_name}, tolerations=[toleration1, toleration2]), #volumes=[volume],
         )
 
         # Create the specification of job

@@ -10,6 +10,7 @@ import multiprocessing
 import socket
 import psutil
 import pandas as pd
+import random
 
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
@@ -40,6 +41,7 @@ class ClusterMonitor:
 
         # time interval in seconds to update Pods statistics
         self.time_interval = settings.TIME_INTERVAL
+        self.available_sensor = settings.SOC_SENSOR
 
         configuration = client.Configuration()
         self.v1 = client.CoreV1Api(client.ApiClient(configuration))
@@ -68,6 +70,8 @@ class ClusterMonitor:
         self.deadline_violations = 0
         self.failed_tasks = 0
         self.failed_vnfs = 0
+
+        self.initial_SOC = 100.0
 
         self.fieldnames_usage_node = ['Timestamp',
                                       'Node',
@@ -158,31 +162,102 @@ class ClusterMonitor:
                         print ("Node: " + node_.metadata.name + "--> Unschedulable")
                     node.update_node(self.all_pods)
                     #node.update_node(self.multideployed_pods)
-                    if len(self.client_data) > 0:
-                        ip_s = ''
+                    if self.available_sensor:
+                        if len(self.client_data) > 0:
+                            ip_s = ''
+                            if str(node.metadata.name).endswith('control-plane'):
+                                ip_s = str(node.spec.to_dict()['pod_cidr'][:-4]) + "1"
+                            else:
+                                ip_s = str(node.spec.to_dict()['pod_cidr'][:-3])
+                                #ip_s = str(node_.status.addresses[0].to_dict()['address'])
+                            if ip_s in self.client_data:
+                                current_SoC = self.client_data[ip_s]['SoC']
+                                node.SoC = str(current_SoC)[:6]
+                    else:
+                        persistent_consumption = 0.0
+                        limited_consumption = 0.0
+                        idle_consumption_worker = 0.0123 #0.0223 0.0323
+                        idle_consumption_master = 0.0262 #0.0362 0.0462
+                        for p in node.pods.items:
+                            if p.metadata.name.startswith('vnf-') and p.metadata.annotations['Deployment_type'] == 'Persistent':
+                                #pod_consumption = round(random.uniform(0.0218, 0.0364), 4) 
+                                #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
+                                #pod_consumption = round(random.uniform(0.0021, 0.0031), 4) 
+                                pod_consumption = round(random.uniform(0.0001, 0.0011), 4) 
+                                persistent_consumption = persistent_consumption + pod_consumption
+                            if p.metadata.name.startswith('vnf-') and p.metadata.annotations['Deployment_type'] == 'Limited':
+                                #pod_consumption = round(random.uniform(0.0218, 0.0364), 4)
+                                #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
+                                #pod_consumption = round(random.uniform(0.0021, 0.0031), 4) 
+                                pod_consumption = round(random.uniform(0.0001, 0.0011), 4) 
+                                limited_consumption = limited_consumption + pod_consumption
                         if str(node.metadata.name).endswith('control-plane'):
-                            ip_s = str(node.spec.to_dict()['pod_cidr'][:-4]) + "1"
+                            current_consumption = persistent_consumption + limited_consumption + idle_consumption_master
+                            if node.SoC == '':
+                                currentSoC = self.initial_SOC - current_consumption
+                                node.SoC = str(currentSoC)
+                            else:
+                                currentSoC = float(node.SoC) - current_consumption
+                                node.SoC = str(currentSoC)
                         else:
-                            ip_s = str(node.spec.to_dict()['pod_cidr'][:-3])
-                            #ip_s = str(node_.status.addresses[0].to_dict()['address'])
-                        if ip_s in self.client_data:
-                            current_SoC = self.client_data[ip_s]['SoC']
-                            node.SoC = str(current_SoC)[:6]
+                            current_consumption = persistent_consumption + limited_consumption + idle_consumption_worker
+                            if node.SoC == '':
+                                currentSoC = self.initial_SOC - current_consumption
+                                node.SoC = str(currentSoC)
+                            else:
+                                currentSoC = float(node.SoC) - current_consumption
+                                node.SoC = str(currentSoC)
                     self.all_nodes.items.append(node)
+                    #print(node.metadata.name, node.SoC)
             for node_ in self.all_nodes.items:
                 node_.update_node(self.all_pods)
                 #node_.update_node(self.multideployed_pods)
-
-                if len(self.client_data) > 0:
-                    ip_s = ''
+                if self.available_sensor:
+                    if len(self.client_data) > 0:
+                        ip_s = ''
+                        if str(node_.metadata.name).endswith('control-plane'):
+                            ip_s = str(node_.spec.to_dict()['pod_cidr'][:-4]) + "1"
+                        else:
+                            ip_s = str(node_.spec.to_dict()['pod_cidr'][:-3])
+                            #ip_s = str(node_.status.addresses[0].to_dict()['address'])
+                        if ip_s in self.client_data:
+                            current_SoC = self.client_data[ip_s]['SoC']
+                            node_.SoC = str(current_SoC)[:6]
+                else:
+                    persistent_consumption = 0.0
+                    limited_consumption = 0.0
+                    idle_consumption_worker = 0.0123 #0.0223 0.0323
+                    idle_consumption_master = 0.0262 #0.0362 0.0462
+                    for p in node_.pods.items:
+                        if p.metadata.name.startswith('vnf-') and p.metadata.annotations['Deployment_type'] == "Persistent":
+                            #pod_consumption = round(random.uniform(0.0218, 0.0364), 4)
+                            #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
+                            #pod_consumption = round(random.uniform(0.0021, 0.0031), 4) 
+                            pod_consumption = round(random.uniform(0.0001, 0.0011), 4) 
+                            persistent_consumption = persistent_consumption + pod_consumption
+                        if p.metadata.name.startswith('vnf-') and p.metadata.annotations['Deployment_type'] == "Limited":
+                            #pod_consumption = round(random.uniform(0.0218, 0.0364), 4)
+                            #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
+                            #pod_consumption = round(random.uniform(0.0021, 0.0031), 4)
+                            pod_consumption = round(random.uniform(0.0001, 0.0011), 4)   
+                            limited_consumption = limited_consumption + pod_consumption
                     if str(node_.metadata.name).endswith('control-plane'):
-                        ip_s = str(node_.spec.to_dict()['pod_cidr'][:-4]) + "1"
+                        current_consumption = persistent_consumption + limited_consumption + idle_consumption_master
+                        if node_.SoC == '':
+                            currentSoC = self.initial_SOC - current_consumption
+                            node_.SoC = str(currentSoC)
+                        else:
+                            currentSoC = float(node_.SoC) - current_consumption
+                            node_.SoC = str(currentSoC)
                     else:
-                        ip_s = str(node_.spec.to_dict()['pod_cidr'][:-3])
-                        #ip_s = str(node_.status.addresses[0].to_dict()['address'])
-                    if ip_s in self.client_data:
-                        current_SoC = self.client_data[ip_s]['SoC']
-                        node_.SoC = str(current_SoC)[:6]
+                        current_consumption = persistent_consumption + limited_consumption + idle_consumption_worker
+                        if node_.SoC == '':
+                            currentSoC = self.initial_SOC - current_consumption
+                            node_.SoC = str(currentSoC)
+                        else:
+                            currentSoC = float(node_.SoC) - current_consumption
+                            node_.SoC = str(currentSoC)
+
                 if node_.usage['cpu'] >= self.max_cpu_per_node - 300 and node_.spec.unschedulable is not True:
                     node_.spec.unschedulable = True
                     print ("Node: " + node_.metadata.name + "--> Unschedulable")
@@ -204,8 +279,21 @@ class ClusterMonitor:
                         }
                     }
                     self.v1.patch_node(node_.metadata.name, body)
+
                 index = self.all_nodes.getIndexNode(lambda x: x.metadata.name == node_.metadata.name)
                 self.all_nodes.items[index] = node_
+                #print(node_.metadata.name, node_.SoC)
+
+            for node_ in self.v1.list_node().items:
+                for condition in node_.status.conditions:
+                    node = self.all_nodes.getNode(lambda x: x.metadata.name == node_.metadata.name)
+                    if condition.type == "Ready" and condition.status != "True":
+                        node.ready = "False"
+                    else:
+                        node.ready = "True"
+                    index = self.all_nodes.getIndexNode(lambda x: x.metadata.name == node.metadata.name)
+                    self.all_nodes.items[index] = node
+
             self.status_lock.release()
         except ApiException as e:
             print("Error: in list_node", e)
@@ -582,7 +670,7 @@ class ClusterMonitor:
                                         if self.all_services.isServiceList(lambda x: x.id_ == this_pod.service_id):
                                             serv = self.all_services.getService(lambda x: x.id_ == this_pod.service_id)
                                             numberVNFs = len(serv.vnfunctions.items)
-                                            self.all_services.items.remove(serv)
+                                            #self.all_services.items.remove(serv)
                                             for i in self.all_pods.items:
                                                 if i.service_id == serv.id_:
                                                     self.all_pods.items.remove(i)
@@ -655,7 +743,7 @@ class ClusterMonitor:
                                     serv = self.all_services.getService(lambda x: x.id_ == this_pod.service_id)
                                     numberVNFs = len(serv.vnfunctions.items)
                                     
-                                    self.all_services.items.remove(serv)
+                                    #self.all_services.items.remove(serv)
                                     for i in self.all_pods.items:
                                         if i.service_id == serv.id_:
                                             self.all_pods.items.remove(i)

@@ -45,7 +45,7 @@ class DDS_Algo:
 
         self.sample_count = 0
 
-        self.connector = rti.Connector("MyParticipantLibrary::kubernetes-control-plane1", "topologia.xml")
+        self.connector = rti.Connector("MyParticipantLibrary::kubernetes-control-plane3", "topologia.xml")
 
         print(self.connector.get_version)
 
@@ -208,7 +208,7 @@ class DDS_Algo:
 
         print("Waiting for publications...")
         self.lock.acquire()
-        reader = self.connector.get_input("kubernetes-control-plane1-sub::kubernetes-control-plane1-dr")
+        reader = self.connector.get_input("kubernetes-control-plane3-sub::kubernetes-control-plane3-dr")
         self.lock.release()
         reader.wait_for_publications()
 
@@ -252,7 +252,7 @@ class DDS_Algo:
                             reader_release_flag = False
                         if is_scheduled:
                             self.lock.acquire()
-                            writer = self.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
+                            writer = self.connector.get_output("kubernetes-control-plane3-pub::kubernetes-control-plane3-dw")
                             writer.instance["Identificador"] = "VNF_Deployed"
                             writer.instance["NodeId"] = vnfName
                             writer.instance["TerminationPointId"] = service.name
@@ -263,7 +263,7 @@ class DDS_Algo:
                             writer_release_flag = True
                         else:
                             self.lock.acquire()
-                            writer = self.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
+                            writer = self.connector.get_output("kubernetes-control-plane3-pub::kubernetes-control-plane3-dw")
                             writer.instance["Identificador"] = "VNF_Rejected"
                             writer.instance["NodeId"] = vnfName
                             #writer.instance["TerminationPointId"] = service.name
@@ -296,7 +296,7 @@ class DDS_Algo:
                             reader_release_flag = False
                         if is_scheduled:
                             self.lock.acquire()
-                            writer = self.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
+                            writer = self.connector.get_output("kubernetes-control-plane3-pub::kubernetes-control-plane3-dw")
                             writer.instance["Identificador"] = "VNF_Deployed"
                             writer.instance["NodeId"] = vnfName
                             writer.instance["TerminationPointId"] = serviceName
@@ -307,7 +307,7 @@ class DDS_Algo:
                             writer_release_flag = True
                         else:
                             self.lock.acquire()
-                            writer = self.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
+                            writer = self.connector.get_output("kubernetes-control-plane3-pub::kubernetes-control-plane3-dw")
                             writer.instance["Identificador"] = "VNF_Rejected"
                             writer.instance["NodeId"] = vnfName
                             #writer.instance["TerminationPointId"] = service.name

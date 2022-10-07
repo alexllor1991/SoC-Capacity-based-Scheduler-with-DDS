@@ -70,6 +70,7 @@ class Node(object):
         self.net_in_pkt = 0.0
         self.net_out_pkt = 0.0
         self.score = 0.0
+        self.ready = ''
 
     def update_node(self, pod_list):
         """

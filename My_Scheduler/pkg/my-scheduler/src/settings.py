@@ -46,3 +46,5 @@ delta_1 = 0.7 # weight in ranking priority queue (values between 0 and 1)
 alfa_1 = 0.5  # weight in ranking node (values between 0 and 1)
 
 RMSE = 3
+
+SOC_SENSOR = False
