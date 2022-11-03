@@ -3,30 +3,6 @@ kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 networking:
   apiServerAddress: "172.16.2.152"
-# patch the generated kubeadm config with some extra settings
-#kubeadmConfigPatches:
-#- |
-#  apiVersion: kubeadm.k8s.io/v1beta2
-#  kind: ClusterConfiguration
-#  metadata:
-#    name: config
-#  apiServer:
-#    extraArgs:
-#      "feature-gates": "FeatureGateName=true"
-#  scheduler:
-#    extraArgs:
-#      "feature-gates": "FeatureGateName=true"
-#  controllerManager:
-#    extraArgs:
-#      "feature-gates": "FeatureGateName=true"
-#- |
-#  apiVersion: kubeadm.k8s.io/v1beta2
-#  kind: InitConfiguration
-#  metadata:
-#    name: config
-#  nodeRegistration:
-#    kubeletExtraArgs:
-#      "feature-gates": "FeatureGateName=true"
 # 1 control plane node and 3 workers
 nodes:
 # the control plane node config
@@ -35,13 +11,6 @@ nodes:
   extraMounts:
   - hostPath: /usr/share/zoneinfo/Europe/Paris
     containerPath: /etc/localtime
-  # kubeadmConfigPatches:
-  # - |
-  #   kind: InitConfiguration
-  #   nodeRegistration:
-  #     kubeletExtraArgs:
-  #       system-reserved: memory=6Gi,cpu=2   
-# the three workers
   extraPortMappings:
   - containerPort: 7400
     hostPort: 7400
@@ -55,6 +24,7 @@ nodes:
     hostPort: 7411
     listenAddress: "127.0.0.1"
     protocol: UDP
+# the three workers
 - role: worker
   image: kindest/node:v1.24.2 #1.19.1
   extraMounts:
@@ -65,8 +35,6 @@ nodes:
     kind: JoinConfiguration
     nodeRegistration:
         name: kubernetes-worker1
-  #     kubeletExtraArgs:
-  #       system-reserved: memory=6Gi,cpu=2
 - role: worker
   image: kindest/node:v1.24.2
   extraMounts:
@@ -77,8 +45,6 @@ nodes:
     kind: JoinConfiguration
     nodeRegistration:
         name: kubernetes-worker2
-  #     kubeletExtraArgs:
-  #       system-reserved: memory=6Gi,cpu=2
 - role: worker
   image: kindest/node:v1.24.2
   extraMounts:
@@ -89,5 +55,3 @@ nodes:
     kind: JoinConfiguration
     nodeRegistration:
         name: kubernetes-worker3
-  #     kubeletExtraArgs:
-  #       system-reserved: memory=6Gi,cpu=2
