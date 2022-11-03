@@ -173,47 +173,16 @@ class ClusterMonitor:
                                 current_SoC = self.client_data[ip_s]['SoC']
                                 node.SoC = str(current_SoC)[:6]
 
-                    if str(node.metadata.name) == 'kubernetes-worker3':
-                        persistent_consumption = 0.0
-                        limited_consumption = 0.0
-                        idle_consumption_worker = 0.0123 #0.0223 0.0323
-                        for p in node.pods.items:
-                            if p.metadata.name.startswith('vnf-') and p.metadata.annotations['Deployment_type'] == 'Persistent':
-                                #pod_consumption = round(random.uniform(0.0218, 0.0364), 4) 
-                                #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
-                                #pod_consumption = round(random.uniform(0.0021, 0.0031), 4) 
-                                pod_consumption = round(random.uniform(0.0001, 0.0011), 4) 
-                                persistent_consumption = persistent_consumption + pod_consumption
-                            if p.metadata.name.startswith('vnf-') and p.metadata.annotations['Deployment_type'] == 'Limited':
-                                #pod_consumption = round(random.uniform(0.0218, 0.0364), 4)
-                                #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
-                                #pod_consumption = round(random.uniform(0.0021, 0.0031), 4) 
-                                pod_consumption = round(random.uniform(0.0001, 0.0011), 4) 
-                                limited_consumption = limited_consumption + pod_consumption
-                        current_consumption = persistent_consumption + limited_consumption + idle_consumption_worker
-                        if node.SoC == '':
-                            currentSoC = self.initial_SOC - current_consumption
-                            node.SoC = str(currentSoC)
-                        else:
-                            currentSoC = float(node.SoC) - current_consumption
-                            node.SoC = str(currentSoC)
-
                     if not self.available_sensor:
                         persistent_consumption = 0.0
                         limited_consumption = 0.0
-                        idle_consumption_worker = 0.0123 #0.0223 0.0323
-                        idle_consumption_master = 0.0262 #0.0362 0.0462
+                        idle_consumption_worker = 0.0123 
+                        idle_consumption_master = 0.0262 
                         for p in node.pods.items:
                             if p.metadata.name.startswith('vnf-') and int(p.metadata.annotations['service_running_time']) == 0:
-                                #pod_consumption = round(random.uniform(0.0218, 0.0364), 4) 
-                                #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
-                                #pod_consumption = round(random.uniform(0.0021, 0.0031), 4) 
                                 pod_consumption = round(random.uniform(0.0001, 0.0011), 4) 
                                 persistent_consumption = persistent_consumption + pod_consumption
                             if p.metadata.name.startswith('vnf-') and int(p.metadata.annotations['service_running_time']) > 0:
-                                #pod_consumption = round(random.uniform(0.0218, 0.0364), 4)
-                                #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
-                                #pod_consumption = round(random.uniform(0.0021, 0.0031), 4) 
                                 pod_consumption = round(random.uniform(0.0001, 0.0011), 4) 
                                 limited_consumption = limited_consumption + pod_consumption
                         if str(node.metadata.name).endswith('control-plane'):
@@ -233,10 +202,8 @@ class ClusterMonitor:
                                 currentSoC = float(node.SoC) - current_consumption
                                 node.SoC = str(currentSoC)
                     self.all_nodes.items.append(node)
-                    #print(node.metadata.name, node.SoC)
             for node_ in self.all_nodes.items:
                 node_.update_node(self.all_pods)
-                #node_.update_node(self.multideployed_pods)
                 if self.available_sensor:
                     if len(self.client_data) > 0:
                         ip_s = ''
@@ -249,47 +216,16 @@ class ClusterMonitor:
                             current_SoC = self.client_data[ip_s]['SoC']
                             node_.SoC = str(current_SoC)[:6]
 
-                if str(node_.metadata.name) == 'kubernetes-worker3':
-                    persistent_consumption = 0.0
-                    limited_consumption = 0.0
-                    idle_consumption_worker = 0.0123 #0.0223 0.0323
-                    for p in node_.pods.items:
-                        if p.metadata.name.startswith('vnf-') and int(p.metadata.annotations['service_running_time']) == 0:
-                            #pod_consumption = round(random.uniform(0.0218, 0.0364), 4) 
-                            #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
-                            #pod_consumption = round(random.uniform(0.0021, 0.0031), 4) 
-                            pod_consumption = round(random.uniform(0.0001, 0.0011), 4) 
-                            persistent_consumption = persistent_consumption + pod_consumption
-                        if p.metadata.name.startswith('vnf-') and int(p.metadata.annotations['service_running_time']) > 0:
-                            #pod_consumption = round(random.uniform(0.0218, 0.0364), 4)
-                            #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
-                            #pod_consumption = round(random.uniform(0.0021, 0.0031), 4) 
-                            pod_consumption = round(random.uniform(0.0001, 0.0011), 4) 
-                            limited_consumption = limited_consumption + pod_consumption
-                    current_consumption = persistent_consumption + limited_consumption + idle_consumption_worker
-                    if node_.SoC == '':
-                        currentSoC = self.initial_SOC - current_consumption
-                        node_.SoC = str(currentSoC)
-                    else:
-                        currentSoC = float(node_.SoC) - current_consumption
-                        node_.SoC = str(currentSoC)
-
                 if not self.available_sensor:
                     persistent_consumption = 0.0
                     limited_consumption = 0.0
-                    idle_consumption_worker = 0.0123 #0.0223 0.0323
-                    idle_consumption_master = 0.0262 #0.0362 0.0462
+                    idle_consumption_worker = 0.0123
+                    idle_consumption_master = 0.0262
                     for p in node_.pods.items:
                         if p.metadata.name.startswith('vnf-') and p.metadata.annotations['Deployment_type'] == "Persistent":
-                            #pod_consumption = round(random.uniform(0.0218, 0.0364), 4)
-                            #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
-                            #pod_consumption = round(random.uniform(0.0021, 0.0031), 4) 
                             pod_consumption = round(random.uniform(0.0001, 0.0011), 4) 
                             persistent_consumption = persistent_consumption + pod_consumption
                         if p.metadata.name.startswith('vnf-') and p.metadata.annotations['Deployment_type'] == "Limited":
-                            #pod_consumption = round(random.uniform(0.0218, 0.0364), 4)
-                            #pod_consumption = round(random.uniform(0.0021, 0.0041), 4)
-                            #pod_consumption = round(random.uniform(0.0021, 0.0031), 4)
                             pod_consumption = round(random.uniform(0.0001, 0.0011), 4)   
                             limited_consumption = limited_consumption + pod_consumption
                     if str(node_.metadata.name).endswith('control-plane'):
@@ -333,15 +269,10 @@ class ClusterMonitor:
 
                 index = self.all_nodes.getIndexNode(lambda x: x.metadata.name == node_.metadata.name)
                 self.all_nodes.items[index] = node_
-                #print(node_.metadata.name, node_.SoC)
 
             for node_ in self.v1.list_node().items:
                 node = self.all_nodes.getNode(lambda x: x.metadata.name == node_.metadata.name)
-                #if node_.spec.unschedulable is True:
-                #    node.ready = "False"
-                #else:
                 for condition in node_.status.conditions:
-                #node = self.all_nodes.getNode(lambda x: x.metadata.name == node_.metadata.name)
                     if condition.type == "Ready" and condition.status != "True":
                         node.ready = "False"
                     else:
