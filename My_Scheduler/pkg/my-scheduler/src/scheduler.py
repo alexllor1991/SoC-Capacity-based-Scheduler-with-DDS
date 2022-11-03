@@ -32,7 +32,7 @@ pd.options.mode.chained_assignment = None
 class Scheduler:
     def __init__(self):
         self.monitor = ClusterMonitor()
-        self.localdds = "kubernetes-control-plane3"
+        self.localdds = "kubernetes-control-plane1"
         self.dds = DDS_Algo("k8s_master", self.localdds, "GC_UPC_1")
         self.watcherpod = watch.Watch()
         configuration = client.Configuration()
@@ -159,7 +159,7 @@ class Scheduler:
                             new_pod.priority = self.vnf.priority
                             new_pod.event = 'service'
 
-                            if self.vnf.multideployment:
+                            if self.vnf.multideployment: 
                                 self.monitor.multideployed_pods.items.append(new_pod)
                                 deadline = abs((new_pod.deadline - datetime.now() - timedelta(seconds=int(new_pod.running_time))).seconds)
                                 data = {}
@@ -173,7 +173,7 @@ class Scheduler:
                                 data["DestinationNode"] = self.localdds
                                 
                                 self.dds.lock.acquire()
-                                writer = self.dds.connector.get_output("kubernetes-control-plane3-pub::kubernetes-control-plane3-dw")
+                                writer = self.dds.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
                                 writer.instance.set_dictionary(data)
                                 dt = int(datetime.now().timestamp() * 1000000000)
                                 writer.write(source_timestamp=dt)
@@ -457,25 +457,6 @@ class Scheduler:
                                         all_VNF_scheduled = serv.vnfunctions.areAllVNFScheduled(lambda x: x.in_node != None)
                                         if all_VNF_scheduled:
                                             self.monitor.scheduled_services += 1
-
-                                            # Notify service deployment to the GC
-                                            # if  serv.multideployment:
-                                            #     data = {}
-                                            #     data["Identificador"] = serv.name
-                                            #     data["NodeId"] = ""
-                                            #     data["TerminationPointId"] = "0"
-                                            #     data["LinkId"] = "0"
-                                            #     data["SourceNodeTp"] = ""
-                                            #     data["DestinationNodeTp"] = "0"
-                                            #     data["SourceNode"] = str(True)
-                                            #     data["DestinationNode"] = self.localdds
-                                                
-                                            #     self.dds.lock.acquire()
-                                            #     writer = self.dds.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
-                                            #     writer.instance.set_dictionary(data)
-                                            #     dt = int(datetime.now().timestamp() * 1000000000)
-                                            #     writer.write(source_timestamp=dt)
-                                            #     self.dds.lock.release()
                                         
                                         index_serv = self.monitor.all_services.getIndexService(lambda x: x.id_ == serv.id_)
                                         self.monitor.all_services.items[index_serv] = serv
@@ -528,7 +509,7 @@ class Scheduler:
                     data["SourceNodeTp"] = node.ready
 
                     self.dds.lock.acquire()
-                    writer = self.dds.connector.get_output("kubernetes-control-plane3-pub::kubernetes-control-plane3-dw")
+                    writer = self.dds.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
                     writer.instance.set_dictionary(data)
                     dt = int(datetime.now().timestamp() * 1000000000)
                     writer.write(source_timestamp=dt)
@@ -661,7 +642,7 @@ class Scheduler:
                             data["DestinationNode"] = self.localdds
 
                             self.dds.lock.acquire()
-                            writer = self.dds.connector.get_output("kubernetes-control-plane3-pub::kubernetes-control-plane3-dw")
+                            writer = self.dds.connector.get_output("kubernetes-control-plane1-pub::kubernetes-control-plane1-dw")
                             writer.instance.set_dictionary(data)
                             dt = int(datetime.now().timestamp() * 1000000000)
                             writer.write(source_timestamp=dt)
