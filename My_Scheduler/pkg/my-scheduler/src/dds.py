@@ -1,4 +1,3 @@
-#import rti.connextdds as dds_package
 import sched
 import time
 import multiprocessing
