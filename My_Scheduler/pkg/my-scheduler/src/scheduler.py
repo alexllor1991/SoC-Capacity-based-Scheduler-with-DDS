@@ -19,8 +19,6 @@ from pod import DataType, Pod, PodList
 from service import ServiceList, TaskList, Service, VNFunction, Task
 from dds import DDS_Algo
 
-#import rti.connextdds as dds_package
-
 from kubernetes import client, config, watch
 from kubernetes.client.rest import ApiException
 
@@ -520,6 +518,13 @@ class Scheduler:
                 print(str(e))
 
     def is_pod_deployed(self, pod):
+        """
+        Method that verifies the deployment's
+        status of the pod.
+        :param pod.Pod pod: Pod to be scheduled
+        :return boolean: true if the pod was deployed,
+                         false if Pod wasn't deployed
+        """
         self.monitor.wait_for_pod(pod)
         pod_scheduled = False
         while not pod_scheduled:
