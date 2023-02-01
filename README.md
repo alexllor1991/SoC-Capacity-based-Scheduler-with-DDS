@@ -1,5 +1,7 @@
 # SOC and Capacity-based Scheduler (SOCCS) with DDS
-This project aims to implement a dynamic scheduler to extend the lifecycle of a cluster by taking into account the State of Charge of their devices and meeting service requirements. Additionally, it incorporate a DDS module to exchange information in a multi-cluster environmment.
+This project aims to implement a dynamic scheduler to extend the lifecycle of a cluster by taking into account the State of Charge of their devices and meeting service requirements. Additionally, it incorporate a DDS module to exchange information in a multi-cluster environmment. The results of this project have been published in the paper entitled **"An Energy-Friendly Scheduler for Edge Computing Systems"** which can be found in the following link:
+
+Article link: https://www.mdpi.com/1424-8220/21/21/7151
 
 1. Install kind to simulate a kubernetes cluster and kubectl to manage it.
 
