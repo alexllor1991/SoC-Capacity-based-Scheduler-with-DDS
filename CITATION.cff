@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use this solution, please cite it as below."
+preferred-citation:
+  type: article
+  authors:
+  - family-names: "Llorens-Carrodeguas"
+    given-names: "Alejandro"
+    orcid: "https://orcid.org/0000-0002-4329-7962"
+  - family-names: "Sagkriotis"
+    given-names: "Stefanos"
+    orcid: "https://orcid.org/0000-0001-9438-3636"
+  - family-names: "Cervelló-Pastor"
+    given-names: "Cristina"
+    orcid: "https://orcid.org/0000-0002-8056-0774"
+  - family-names: "Pezaros"
+    given-names: "Dimitrios"
+    orcid: "https://orcid.org/0000-0003-0939-378X"
+  title: "An Energy-Friendly Scheduler for Edge Computing Systems"
+  doi: "https://doi.org/10.3390/s21217151"
+  journal: "Sensors"
+  issue: 21
+  volume: 21
+  year: 2021
