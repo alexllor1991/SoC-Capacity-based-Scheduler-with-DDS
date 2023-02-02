@@ -6,7 +6,7 @@ Article link: https://www.mdpi.com/1424-8220/21/21/7151
 If you use this solution in your work, please cite it as [1] (see CITATION.cff).
 
 ## Reference
-[1] Llorens-Carrodeguas, A.; G. Sagkriotis, S.; Cervelló-Pastor, C.; P. Pezaros, D. An Energy-Friendly Scheduler for Edge Computing Systems. Sensors 2021, 21, 7151. https://doi.org/10.3390/s21217151
+[1] Llorens-Carrodeguas, A.; G. Sagkriotis, S.; Cervelló-Pastor, C.; P. Pezaros, D. "An Energy-Friendly Scheduler for Edge Computing Systems," *Sensors* 2021, vol. 21, 7151. https://doi.org/10.3390/s21217151
 
 # Steps to deploy a Kubernetes cluster and use SOCCS mechanism
 
